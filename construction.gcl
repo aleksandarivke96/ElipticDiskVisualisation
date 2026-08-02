@@ -1,0 +1,89 @@
+% --------------------------------------------------------------------
+% Elliptic geometry, closed disk model
+%
+% Written for GCLC, Predrag Janicic, University of Belgrade:
+%     gclc  thisfile.gcl        -> LaTeX picture
+%     gclc -svg thisfile.gcl    -> SVG
+%
+% The elliptic plane is the sphere with antipodal points identified;
+% its upper half projects onto the closed unit disk, so opposite
+% points of the boundary circle are one and the same point.  A line
+% is a great circle, and a great circle projects to an ellipse about
+% the centre with semi-axes 1 and |n_z| - so each line below is half
+% an ellipse, drawn as one arc rather than sampled.
+%
+% Coordinates are the construction's own: the unit disk sits at
+% radius 43mm about (50, 50), which is what ang_origin and ang_unit say.
+% Drawn plain: no colour, and the rest of each line dashed.
+% 5 points, 4 lines, 1 triangles
+% --------------------------------------------------------------------
+
+dim 100 100
+
+ang_picture 0 0 100 100
+ang_origin 50 50
+ang_unit 43
+
+% the disk; opposite boundary points are the same point
+linethickness 0.50
+ang_point Ocentre 0.00000 0.00000
+ang_point Orim 1.00000 0.00000
+drawdashcircle Ocentre Orim
+
+% line a through A and B, half an ellipse with semi-minor axis 0.3040
+ang_point aEnd 0.88618 0.46334
+ang_point aMin -0.14086 0.26941
+linethickness 0.50
+drawellipsearc Ocentre aEnd aMin 180
+
+% segment b = CD, length 1.4014 rad, half an ellipse with semi-minor axis 0.5294
+ang_point bEnd -0.90002 -0.43585
+ang_point bMin 0.23074 -0.47648
+linethickness 0.25
+drawdashellipsearc Ocentre bEnd bMin 180
+linethickness 0.90
+drawellipsearc2 Ocentre bEnd bMin 31.5534 115.7652
+
+% segment c = DE, length 1.3413 rad, half an ellipse with semi-minor axis 0.4580
+ang_point cEnd 0.83568 -0.54921
+ang_point cMin 0.25151 0.38270
+linethickness 0.25
+drawdashellipsearc Ocentre cEnd cMin 180
+linethickness 0.90
+drawellipsearc2 Ocentre cEnd cMin 26.4710 119.6007
+
+% segment d = EC, length 1.3930 rad, half an ellipse with semi-minor axis 0.4344
+ang_point dEnd 0.15211 0.98836
+ang_point dMin -0.42939 0.06608
+linethickness 0.25
+drawdashellipsearc Ocentre dEnd dMin 180
+linethickness 0.90
+drawellipsearc2 Ocentre dEnd dMin 31.5078 124.6340
+
+% triangle CDE: angles 78.24 81.71 82.30 deg, sum 242.25 deg, area 1.0865 = the excess over pi (Girard)
+linethickness 0.30
+ang_point CDECax -0.51863 -0.57017
+ang_point CDECay -0.36454 -0.56986
+ang_point k1 -0.40943 -0.64003
+drawellipsearc2 k1 CDECax CDECay 213.9141 103.0550
+ang_point CDEDax 0.72904 -0.21804
+ang_point CDEDay 0.66027 -0.07922
+ang_point k2 0.74449 -0.08933
+drawellipsearc2 k2 CDEDax CDEDay 220.6899 105.5913
+ang_point CDEEax -0.37970 0.56999
+ang_point CDEEay -0.29701 0.70799
+ang_point k3 -0.26016 0.62014
+drawellipsearc2 k3 CDEEax CDEEay 41.3783 99.8654
+
+% the points, with their labels
+linethickness 0.50
+ang_point A -0.32809 0.16349
+cmark_lt A
+ang_point B 0.52330 0.51743
+cmark_rt B
+ang_point C -0.41291 -0.64547
+cmark_lb C
+ang_point D 0.75082 -0.09009
+cmark_rb D
+ang_point E -0.26237 0.62542
+cmark_lt E
