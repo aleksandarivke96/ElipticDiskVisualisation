@@ -61,12 +61,20 @@ def _ccw_degrees(start, end) -> float:
 class Sheet:
     """The GCLC file being written, and the disk-to-picture mapping."""
 
-    def __init__(self, size: float = SIZE, margin: float = MARGIN, plain: bool = False):
+    def __init__(self, size: float = SIZE, margin: float = MARGIN, plain: bool = False,
+                 projection: geo.Projection = geo.ORTHOGONAL):
         self.size = size
         self.radius = size / 2.0 - margin
         self.plain = plain  # no colour at all: black ink, construction lines dashed
+        self.projection = projection
         self.lines: list[str] = []
         self._names = 0
+        self._centres: dict[str, np.ndarray] = {"Ocentre": np.zeros(2)}
+        self._axes: dict[str, np.ndarray] = {"Ocentre": np.zeros(2)}
+
+    def screen(self, vectors) -> np.ndarray:
+        """Points of the sphere -> where the current projection puts them."""
+        return self.projection.project(np.asarray(vectors, dtype=float))
 
     # --------------------------------------------------------------- writing
 
@@ -96,6 +104,9 @@ class Sheet:
         return (half + self.radius * float(xy[0]), half + self.radius * float(xy[1]))
 
     def point(self, name: str, xy) -> str:
+        xy = np.asarray(xy, dtype=float)
+        self._centres[name] = xy
+        self._axes[name] = xy
         self.raw(f"ang_point {name} {float(xy[0]):.5f} {float(xy[1]):.5f}")
         return name
 
@@ -117,60 +128,72 @@ class Sheet:
 
     # --------------------------------------------------------------- curves
 
-    def ellipse(self, label: str, normal: np.ndarray) -> tuple[str, str] | None:
-        """Name the ellipse a line projects to, by its two axis ends.
+    def conic(self, label: str, shape) -> tuple[str, str, str] | None:
+        """Name the curve a line or a circle projects to, by centre and axis ends.
 
-        None for the two lines that are not ellipses - the rim circle and a
-        diameter - which the drawing commands below then handle straight.
+        `shape` is what the projection said: (centre, major, minor), or None
+        when the image is straight and the caller should draw it straight.
         """
-        axes = geo.line_ellipse(normal)
-        if axes is None:
+        if shape is None:
             return None
-        rim, minor = axes
-        return (self.point(f"{label}End", rim), self.point(f"{label}Min", minor))
+        centre, major, minor = shape
+        middle = "Ocentre" if not np.any(centre) else self.point(f"{label}C", centre)
+        return (middle,
+                self.point(f"{label}X", centre + major),
+                self.point(f"{label}Y", centre + minor))
 
-    def whole_line(self, normal: np.ndarray, ellipse: tuple[str, str] | None,
+    def whole_line(self, normal: np.ndarray, conic: tuple[str, str, str] | None,
                    dashed: bool = False) -> None:
-        """The whole of an elliptic line: half an ellipse, or a degenerate case."""
+        """The whole of an elliptic line, from one rim crossing round to the other."""
         dash = "dash" if dashed else ""
-        if ellipse is not None:
-            self.raw(f"draw{dash}ellipsearc Ocentre {ellipse[0]} {ellipse[1]} 180")
-        elif geo.is_boundary_line(normal):
-            self.raw(f"draw{dash}circle Ocentre Orim")  # the equator is the rim itself
-        else:
-            ends = geo.line_endpoints(normal)  # n_z = 0: a straight diameter
+        if geo.is_boundary_line(normal):  # the equator is the rim itself
+            self.raw(f"draw{dash}circle Ocentre Orim")
+            return
+        ends = geo.line_endpoints(normal)  # the rim is where both projections agree
+        if conic is None:  # n_z = 0: a straight diameter, either way of looking
             self.raw(f"draw{dash}segment {self.spare_point(ends[0])} "
                      f"{self.spare_point(ends[1])}")
+            return
+        e1, e2, t0, t1 = geo.line_arc(normal)
+        middle = self.screen(geo.arc_end_vector(e1, e2, 0.5 * (t0 + t1)))
+        self.conic_arc(conic, self.screen(geo.arc_end_vector(e1, e2, t0)),
+                       self.screen(geo.arc_end_vector(e1, e2, t1)), middle, dashed)
 
-    def arc(self, normal: np.ndarray, ellipse: tuple[str, str] | None,
-            start, end) -> None:
-        """The piece of a line between two of its points."""
-        if ellipse is None and geo.is_boundary_line(normal):
+    def arc(self, normal: np.ndarray, conic: tuple[str, str, str] | None,
+            start, end, through) -> None:
+        """The piece of a line between two of its points, given in the disk."""
+        if conic is None and geo.is_boundary_line(normal):
             sweep = _ccw_degrees(start, end)
+            if _ccw_degrees(start, through) > sweep:
+                start, end = end, start
+                sweep = _ccw_degrees(start, end)
             self.raw(f"drawarc_p Ocentre {self.spare_point(start)} {sweep:.4f}")
             return
-        if ellipse is None:  # a piece of a diameter is a straight segment
+        if conic is None:  # a piece of a diameter is a straight segment
             self.raw(f"drawsegment {self.spare_point(start)} {self.spare_point(end)}")
             return
-        self.ellipse_arc((0.0, 0.0), geo.line_ellipse(normal)[0], ellipse, start, end)
+        self.conic_arc(conic, start, end, through)
 
-    def ellipse_arc(self, centre, axis, names: tuple[str, str], start, end) -> None:
-        """An arc of an already-named ellipse, between two points on it.
+    def conic_arc(self, names: tuple[str, str, str], start, end, through,
+                  dashed: bool = False) -> None:
+        """An arc of an already-named conic, between two points on it.
 
         `drawellipsearc2` sweeps counterclockwise from the first axis end, by
-        the angle at the centre - so either the arc runs that way or its mirror
-        does, and the offset and the sweep are angles measured from the centre.
+        the angle at the centre - so the arc runs that way or its mirror does,
+        and `through` says which of the two is the one wanted.
         """
-        centre = np.asarray(centre, dtype=float)
+        centre = self._centres[names[0]]
         start, end = np.asarray(start, float) - centre, np.asarray(end, float) - centre
-        if _ccw_degrees(start, end) > 180.0:
+        through = np.asarray(through, dtype=float) - centre
+        sweep = _ccw_degrees(start, end)
+        if _ccw_degrees(start, through) > sweep:  # it goes round the other way
             start, end = end, start
-        offset, sweep = _ccw_degrees(np.asarray(axis, float) - centre, start), \
-            _ccw_degrees(start, end)
+            sweep = _ccw_degrees(start, end)
         if sweep < 1e-4:
             return
-        middle = "Ocentre" if not np.any(centre) else self.spare_point(centre)
-        self.raw(f"drawellipsearc2 {middle} {names[0]} {names[1]} "
+        offset = _ccw_degrees(self._axes[names[1]] - centre, start)
+        dash = "dash" if dashed else ""
+        self.raw(f"draw{dash}ellipsearc2 {names[0]} {names[1]} {names[2]} "
                  f"{offset:.4f} {sweep:.4f}")
 
 
@@ -204,6 +227,7 @@ def _header(sheet: Sheet, construction: Construction, title: str | None) -> None
     sheet.comment("the centre with semi-axes 1 and |n_z| - so each line below is half")
     sheet.comment("an ellipse, drawn as one arc rather than sampled.")
     sheet.comment()
+    sheet.comment(f"View: {sheet.projection.name} - {sheet.projection.summary}.")
     sheet.comment("Coordinates are the construction's own: the unit disk sits at")
     sheet.comment(f"radius {sheet.radius:.0f}mm about ({sheet.size / 2:.0f}, "
                   f"{sheet.size / 2:.0f}), which is what ang_origin and ang_unit say.")
@@ -241,12 +265,12 @@ def _line(sheet: Sheet, line: Line) -> None:
         sheet.raw()
         return
 
-    sheet.comment(_describe(line))
-    ellipse = sheet.ellipse(line.label, normal)
+    sheet.comment(_describe(line, sheet.projection))
+    conic = sheet.conic(line.label, sheet.projection.conic(normal))
     if not line.is_partial:
         sheet.color(line.color)
         sheet.thickness(0.5)
-        sheet.whole_line(normal, ellipse)
+        sheet.whole_line(normal, conic)
         sheet.raw()
         return
 
@@ -254,12 +278,15 @@ def _line(sheet: Sheet, line: Line) -> None:
     # dashed where there is not - which is how it would have been drawn by hand
     sheet.color(line.color, FAINT)
     sheet.thickness(0.25)
-    sheet.whole_line(normal, ellipse, dashed=sheet.plain)
+    sheet.whole_line(normal, conic, dashed=sheet.plain)
     sheet.color(line.color)         # the piece the tool actually made
     sheet.thickness(0.9)
     ends = line.endpoints()
     for e1, e2, t0, t1 in (geo.segment_arcs(*ends) if ends is not None else []):
-        sheet.arc(normal, ellipse, geo.arc_end(e1, e2, t0), geo.arc_end(e1, e2, t1))
+        sheet.arc(normal, conic,
+                  sheet.screen(geo.arc_end_vector(e1, e2, t0)),
+                  sheet.screen(geo.arc_end_vector(e1, e2, t1)),
+                  sheet.screen(geo.arc_end_vector(e1, e2, 0.5 * (t0 + t1))))
     if line.is_perpendicular:
         _foot(sheet, line, normal)
     sheet.raw()
@@ -274,13 +301,13 @@ def _foot(sheet: Sheet, line: Line, normal: np.ndarray) -> None:
     sheet.thickness(0.4)
     marker = geo.right_angle_marker(foot, base_normal, normal)
     if marker is not None:
-        sheet.polyline(marker)
-    sheet.raw(f"drawpoint {sheet.spare_point(foot[:2])}")
+        sheet.polyline(sheet.screen(marker))
+    sheet.raw(f"drawpoint {sheet.spare_point(sheet.screen(foot))}")
 
 
 def _triangle(sheet: Sheet, triangle: Triangle) -> None:
     """The sides are lines already; this is the measuring, as far as it travels."""
-    sheet.comment(_describe(triangle))
+    sheet.comment(_describe(triangle, sheet.projection))
     vectors = triangle.vectors()
     if vectors is None:
         sheet.raw()
@@ -291,17 +318,17 @@ def _triangle(sheet: Sheet, triangle: Triangle) -> None:
     for vertex, corner, first, second in zip(vectors, triangle.vertices,
                                              (b, c, a), (c, a, b)):
         # the mark is an arc of the circle at ANGLE_RADIUS about the vertex, and
-        # that circle projects to an ellipse of its own - so it is one arc too
+        # a circle projects to a conic of its own - so it is one arc too
         arc = geo.angle_arc(vertex, first, second, samples=DECOR_SAMPLES)
         if arc is None:
             continue
-        centre, major, minor = geo.small_circle_ellipse(vertex, geo.ANGLE_RADIUS)
-        if np.linalg.norm(minor) < 1e-4:  # the circle is seen edge-on: a stroke
-            sheet.polyline(arc)
+        drawn = sheet.screen(arc)
+        shape = sheet.projection.point_conic(vertex, geo.ANGLE_RADIUS)
+        if shape is None or np.linalg.norm(shape[2]) < 1e-4:  # edge-on: a stroke
+            sheet.polyline(drawn)
             continue
-        names = (sheet.point(f"{triangle.label}{corner.label}ax", centre + major),
-                 sheet.point(f"{triangle.label}{corner.label}ay", centre + minor))
-        sheet.ellipse_arc(centre, centre + major, names, arc[0], arc[-1])
+        names = sheet.conic(f"{triangle.label}{corner.label}a", shape)
+        sheet.conic_arc(names, drawn[0], drawn[-1], drawn[len(drawn) // 2])
     sheet.raw()
 
 
@@ -313,11 +340,12 @@ def _point(sheet: Sheet, point: Point) -> None:
     if not point.is_free:
         sheet.comment(f"{point.label} is the {point.source.describe()}")
     sheet.color(point.color)
-    sheet.point(point.label, xy)
-    sheet.raw(f"{_corner(xy)} {point.label}")
+    drawn = sheet.screen(point.vector)
+    sheet.point(point.label, drawn)
+    sheet.raw(f"{_corner(drawn)} {point.label}")
 
 
-def _describe(obj) -> str:
+def _describe(obj, projection: geo.Projection = geo.ORTHOGONAL) -> str:
     """The one-line note that goes above an object, in the file's comments."""
     if isinstance(obj, Triangle):
         angles = obj.angles()
@@ -329,7 +357,7 @@ def _describe(obj) -> str:
                   else "its sides close up through the rim, so it bounds no disk")
         return (f"triangle {obj.label}: angles {degrees} deg, "
                 f"sum {np.degrees(sum(angles)):.2f} deg, {excess}")
-    shape = _shape(obj.normal)
+    shape = _shape(obj.normal, projection)
     if obj.is_perpendicular:
         return (f"perpendicular {obj.label} from {obj.p.label} to {obj.base.label}, "
                 f"distance {obj.length():.4f} rad, {shape}")
@@ -342,25 +370,32 @@ def _describe(obj) -> str:
     return f"line {obj.label} through {obj.p.label} and {obj.q.label}, {shape}"
 
 
-def _shape(normal: np.ndarray) -> str:
+def _shape(normal: np.ndarray, projection: geo.Projection) -> str:
     if geo.is_boundary_line(normal):
         return "the equator, which is the rim circle itself"
-    if geo.line_ellipse(normal) is None:
+    shape = projection.conic(normal)
+    if shape is None:
         return "a diameter"
-    return f"half an ellipse with semi-minor axis {abs(float(normal[2])):.4f}"
+    _, major, minor = shape
+    if abs(np.linalg.norm(major) - np.linalg.norm(minor)) < 1e-9:
+        return f"an arc of a circle of radius {np.linalg.norm(major):.4f}"
+    return f"half an ellipse with semi-minor axis {np.linalg.norm(minor):.4f}"
 
 
 # ------------------------------------------------------------------ the export
 
 
 def to_gclc(construction: Construction, size: float = SIZE, margin: float = MARGIN,
-            title: str | None = None, plain: bool = False) -> str:
+            title: str | None = None, plain: bool = False,
+            projection: geo.Projection = geo.ORTHOGONAL) -> str:
     """The whole construction as the text of a GCLC file.
 
     `plain` draws it the way it would have been drawn on paper: black ink
-    throughout, and the rest of a line dashed rather than faint.
+    throughout, and the rest of a line dashed rather than faint.  `projection`
+    picks the view - the same construction seen straight down or from the south
+    pole, which is the difference between elliptical and circular arcs.
     """
-    sheet = Sheet(size, margin, plain)
+    sheet = Sheet(size, margin, plain, projection)
     _header(sheet, construction, title)
     _disk(sheet)
     for line in construction.lines:

@@ -48,14 +48,21 @@ def lift(x: float, y: float) -> np.ndarray:
 
 
 def upper(v: np.ndarray) -> np.ndarray:
-    """The representative of an elliptic point on the closed upper hemisphere."""
+    """The representative of an elliptic point on the closed upper hemisphere.
+
+    Works on one vector or on a whole (N, 3) array of them.  Only a point
+    definitely below the equator is turned over: on the equator itself both
+    representatives are equally right, and a point that is there by a hair is
+    left where the caller put it, so a curve ending on the rim is not torn in
+    two by a z of -1e-17.
+    """
     v = np.asarray(v, dtype=float)
-    return -v if v[2] < 0.0 else v.copy()
+    return np.where(v[..., 2:3] < -EPS, -v, v)
 
 
 def project(v: np.ndarray) -> np.ndarray:
     """Unit vector -> the disk point representing its elliptic point."""
-    return upper(v)[:2]
+    return upper(v)[..., :2]
 
 
 def antipode(xy) -> np.ndarray:
@@ -90,6 +97,124 @@ def is_boundary_line(n: np.ndarray) -> bool:
     return abs(abs(float(n[2])) - 1.0) < EPS
 
 
+class Projection:
+    """A way of drawing the hemisphere onto the closed unit disk.
+
+    Both of the two below send the hemisphere onto the same disk and fix the
+    rim, so the model, the picking and the elliptic geometry are untouched by
+    the choice - only where a point of the sphere lands on the page.  Each also
+    knows what a line looks like once drawn, which is what lets the export write
+    real arcs instead of sampled chains:
+
+    `conic(n)` gives the curve a line becomes, as (centre, major, minor) - the
+    centre of an ellipse and its two semi-axes as vectors.  `point_conic(a, r)`
+    does the same for the circle of everything r away from a point.  Either can
+    be None, which means the image is straight and the caller should draw a
+    segment through the two ends instead.
+
+    `ray(v)` is the line of sight the projection works along, which is what the
+    3-D view draws to show a point of the sphere being carried down to the disk.
+    """
+
+    name = ""
+    summary = ""
+
+    def project(self, v: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+    def lift(self, x: float, y: float) -> np.ndarray:
+        raise NotImplementedError
+
+    def conic(self, n):
+        raise NotImplementedError
+
+    def point_conic(self, a, radius):
+        raise NotImplementedError
+
+    def landing(self, v: np.ndarray) -> np.ndarray:
+        """Where a point of the sphere lands, as a point of the plane z = 0."""
+        x, y = self.project(np.asarray(v, dtype=float))
+        return np.array([x, y, 0.0])
+
+    def ray(self, v: np.ndarray) -> np.ndarray:
+        """The two ends of the line of sight that carries v down to the disk."""
+        raise NotImplementedError
+
+
+class Orthogonal(Projection):
+    """Straight down: drop the z coordinate.  A line becomes half an ellipse."""
+
+    name = "orthogonal"
+    summary = "seen straight down; a line is half an ellipse"
+
+    def project(self, v):
+        return upper(v)[..., :2]
+
+    def lift(self, x, y):
+        return lift(*clamp_to_disk(x, y))
+
+    def conic(self, n):
+        axes = line_ellipse(n)
+        if axes is None:
+            return None
+        rim, minor = axes
+        return np.zeros(2), rim, minor
+
+    def point_conic(self, a, radius):
+        return small_circle_ellipse(a, radius)
+
+    def ray(self, v):
+        """Straight down, so the sight line is the drop from the point itself."""
+        return np.array([upper(v), self.landing(v)])
+
+
+class Stereographic(Projection):
+    """From the south pole: (x, y) / (1 + z).  A line becomes a circular arc.
+
+    This is the conformal view - angles on the page are the angles of the
+    geometry - bought at the price of distance no longer being the plain
+    distance from the centre.
+    """
+
+    name = "stereographic"
+    summary = "from the south pole; a line is a circular arc, angles are true"
+
+    def project(self, v):
+        v = upper(v)
+        return v[..., :2] / (1.0 + v[..., 2:3])
+
+    def lift(self, x, y):
+        x, y = clamp_to_disk(x, y)
+        squared = x * x + y * y
+        return np.array([2.0 * x, 2.0 * y, 1.0 - squared]) / (1.0 + squared)
+
+    def conic(self, n):
+        """The plane n.x = 0 becomes |s|^2 - 2(n1 u + n2 v)/n3 - 1 = 0."""
+        if abs(float(n[2])) < EPS:  # a great circle through the poles: a diameter
+            return None
+        centre = np.array([n[0], n[1]], dtype=float) / float(n[2])
+        radius = 1.0 / abs(float(n[2]))
+        return centre, np.array([radius, 0.0]), np.array([0.0, radius])
+
+    def point_conic(self, a, radius):
+        """Same working, for the plane a.x = cos(radius)."""
+        cos_r, denominator = np.cos(radius), float(a[2]) + np.cos(radius)
+        if abs(denominator) < EPS:  # the circle passes through the south pole
+            return None
+        centre = np.array([a[0], a[1]], dtype=float) / denominator
+        size = float(np.sqrt(1.0 - cos_r * cos_r)) / abs(denominator)
+        return centre, np.array([size, 0.0]), np.array([0.0, size])
+
+    def ray(self, v):
+        """The sight line starts at the south pole and runs on through the point."""
+        return np.array([[0.0, 0.0, -1.0], self.landing(v)])
+
+
+ORTHOGONAL = Orthogonal()
+STEREOGRAPHIC = Stereographic()
+PROJECTIONS = {p.name: p for p in (ORTHOGONAL, STEREOGRAPHIC)}
+
+
 def line_arc(n: np.ndarray) -> tuple[np.ndarray, np.ndarray, float, float]:
     """The line with normal n as one arc: basis (e1, e2) and a range of t.
 
@@ -106,17 +231,32 @@ def line_arc(n: np.ndarray) -> tuple[np.ndarray, np.ndarray, float, float]:
     return e1, e2, phi - HALF_PI, phi + HALF_PI
 
 
+def arc_vectors(e1: np.ndarray, e2: np.ndarray, t0: float, t1: float,
+                samples: int = 512) -> np.ndarray:
+    """An arc sampled into an (N, 3) array of points on the sphere."""
+    t = np.linspace(t0, t1, samples)
+    return np.cos(t)[:, None] * e1 + np.sin(t)[:, None] * e2
+
+
 def arc_points(e1: np.ndarray, e2: np.ndarray, t0: float, t1: float,
                samples: int = 512) -> np.ndarray:
-    """An arc sampled into an (N, 2) array of disk points."""
-    t = np.linspace(t0, t1, samples)
-    pts = np.cos(t)[:, None] * e1 + np.sin(t)[:, None] * e2
-    return pts[:, :2]
+    """The same arc seen straight down, as an (N, 2) array of disk points."""
+    return arc_vectors(e1, e2, t0, t1, samples)[:, :2]
+
+
+def arc_end_vector(e1: np.ndarray, e2: np.ndarray, t: float) -> np.ndarray:
+    """The point of the sphere an arc reaches at parameter t."""
+    return np.cos(t) * e1 + np.sin(t) * e2
 
 
 def arc_end(e1: np.ndarray, e2: np.ndarray, t: float) -> np.ndarray:
-    """The disk point an arc reaches at parameter t."""
-    return (np.cos(t) * e1 + np.sin(t) * e2)[:2]
+    """The disk point an arc reaches at parameter t, seen straight down."""
+    return arc_end_vector(e1, e2, t)[:2]
+
+
+def line_vectors(n: np.ndarray, samples: int = 512) -> np.ndarray:
+    """The full elliptic line with normal n, sampled on the sphere."""
+    return arc_vectors(*line_arc(n), samples)
 
 
 def line_points(n: np.ndarray, samples: int = 512) -> np.ndarray:
@@ -125,7 +265,7 @@ def line_points(n: np.ndarray, samples: int = 512) -> np.ndarray:
     Generically a half-ellipse joining two antipodal boundary points; the
     equator (n = +-z_hat) comes back as the whole boundary circle.
     """
-    return arc_points(*line_arc(n), samples)
+    return line_vectors(n, samples)[:, :2]
 
 
 def line_ellipse(n: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
@@ -202,9 +342,15 @@ def segment_arcs(p: np.ndarray, q: np.ndarray) -> list[tuple[np.ndarray, np.ndar
     return arcs
 
 
+def segment_vector_paths(p: np.ndarray, q: np.ndarray,
+                         samples: int = 256) -> list[np.ndarray]:
+    """Shortest elliptic segment from p to q, sampled on the sphere."""
+    return [arc_vectors(*arc, samples) for arc in segment_arcs(p, q)]
+
+
 def segment_paths(p: np.ndarray, q: np.ndarray, samples: int = 256) -> list[np.ndarray]:
     """Shortest elliptic segment from p to q, as one or two drawable paths."""
-    return [arc_points(*arc, samples) for arc in segment_arcs(p, q)]
+    return [path[:, :2] for path in segment_vector_paths(p, q, samples)]
 
 
 def polar_point(n: np.ndarray) -> np.ndarray:
@@ -323,8 +469,8 @@ def angle_arc(a: np.ndarray, b: np.ndarray, c: np.ndarray,
               radius: float = ANGLE_RADIUS, samples: int = 24) -> np.ndarray | None:
     """The little arc marking the angle at a, drawn on the sphere and projected.
 
-    Like `right_angle_marker` this is an honest projection rather than a flat
-    circular arc, and it is dropped near the rim where it would tear.
+    Given as points of the sphere for the caller to project; like
+    `right_angle_marker` it is dropped near the rim, where it would tear.
     """
     t1, t2 = tangent(a, b), tangent(a, c)
     if t1 is None or t2 is None:
@@ -343,7 +489,7 @@ def angle_arc(a: np.ndarray, b: np.ndarray, c: np.ndarray,
     pts = np.cos(radius) * np.asarray(a, dtype=float) + np.sin(radius) * directions
     if np.any(pts[:, 2] < -EPS):  # the arc would straddle the rim
         return None
-    return pts[:, :2]
+    return pts
 
 
 def perpendicular_normal(p: np.ndarray, n: np.ndarray) -> np.ndarray | None:
@@ -376,12 +522,13 @@ def distance_to_line(p: np.ndarray, n: np.ndarray) -> float:
 
 def right_angle_marker(foot: np.ndarray, n1: np.ndarray, n2: np.ndarray,
                        size: float = 0.09) -> np.ndarray | None:
-    """A small square on the sphere at the foot, projected into the disk.
+    """A small square on the sphere at the foot, as three points of the sphere.
 
-    Orthogonal projection is not conformal, so this comes out as a slanted
-    parallelogram everywhere except the centre - the drawing is honest about the
-    distortion rather than faking a square corner. None near the rim, where the
-    square would straddle the boundary and tear.
+    Seen straight down this comes out as a slanted parallelogram everywhere
+    except the centre - the drawing is honest about the distortion rather than
+    faking a square corner, and under the conformal projection it squares up by
+    itself. None near the rim, where the square would straddle the boundary and
+    tear.
     """
     t1 = np.cross(n1, foot)
     t2 = np.cross(n2, foot)
@@ -398,5 +545,5 @@ def right_angle_marker(foot: np.ndarray, n1: np.ndarray, n2: np.ndarray,
             corner = -corner
         if corner[2] < -EPS:  # crossed the equator: the marker would tear
             return None
-        xy.append(corner[:2])
+        xy.append(corner)
     return np.array(xy)

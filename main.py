@@ -37,18 +37,22 @@ def main() -> None:
                         help="write the construction as a GCLC file and exit")
     parser.add_argument("--plain", action="store_true",
                         help="with --gclc: black ink only, construction lines dashed")
+    parser.add_argument("--conformal", action="store_true",
+                        help="draw from the south pole: lines become circular arcs")
+    parser.add_argument("--no-sphere", dest="sphere", action="store_false",
+                        help="leave out the 3-D pane showing the sphere itself")
     args = parser.parse_args()
 
-    if args.save or args.gclc:
-        import matplotlib
-        matplotlib.use("Agg")
-
     viewer = EllipticDiskViewer()
+    viewer.flags["conformal"] = args.conformal
+    viewer.flags["sphere"] = args.sphere
     build(viewer, args)
 
     if args.gclc:
-        written = gclc.export(viewer.construction, args.gclc, plain=args.plain)
-        print(f"wrote {written} for GCLC{' (plain)' if args.plain else ''}")
+        written = gclc.export(viewer.construction, args.gclc, plain=args.plain,
+                              projection=viewer.projection)
+        how = " (plain)" if args.plain else ""
+        print(f"wrote {written} for GCLC, {viewer.projection.name} view{how}")
     if args.save:
         viewer.save(args.save)
         print(f"wrote {args.save}")
@@ -101,7 +105,7 @@ def build(viewer: EllipticDiskViewer, args: argparse.Namespace) -> None:
         construction.add_meet(line(i), line(j))
 
     if points:
-        viewer._redraw()
+        viewer.changed()
 
 
 if __name__ == "__main__":

@@ -36,10 +36,11 @@ is live: move one vertex and the triangles, perpendiculars, poles and meets
 downstream of it all follow.
 
 **Show** toggles: `l` labels (and the triangle readouts), `p` poles, `x` meets
-(intersections), `e` rim ends, `b` **plain** — black ink on white, with line
+(intersections), `e` rim ends, `o` **conformal** (see below), `b` **plain** — black ink on white, with line
 weight doing the work colour was doing, and the rest of each line dashed. Turn
 it on and the picture is the figure you would put in a paper; **Save GCLC**
-then exports exactly that.
+then exports exactly that. And for the right-hand pane: `s` shows or hides the
+**3-D sphere**, `r` its **projector** rays, `a` the **antipodes**.
 **Edit**: `u` undo the last action — a triangle and its three sides go together —
 `c` clear everything, `g` **Save GCLC** (a box opens over the disk: type a file
 name, press enter, `esc` cancels) — `G` saves the same thing plain, in black and
@@ -55,6 +56,52 @@ triangle, its three altitudes and the orthocentre they share:
 python3 main.py --points 0.0 0.35 0.55 -0.3 -0.5 -0.25 \
                 --triangles 0 1 2 --perps 2 0 0 1 1 2 --meets 3 4
 ```
+
+## The sphere on the right
+
+The disk is the upper hemisphere flattened out, and the right-hand pane
+un-flattens it. The same construction is drawn twice over: once on the ball it
+actually lives on, as arcs of real great circles, and once lying in the
+equatorial plane underneath — which is the picture the left-hand pane shows.
+Dotted **projector** rays join the two, one per point, so you can see exactly
+which point of the sphere became which point of the disk. **Drag a vertex on the
+left and the great circle swings round on the right.**
+
+The tinted half is the model: `{v : v·ẑ ≥ 0}`, one representative of every
+elliptic point. Turn on **Antipodes** (`a`) and each point's other
+representative `−v` appears, joined to it through the centre — that dotted line
+*is* the identification, and you can watch a point cross the rim on the left
+while its antipode crosses in from the other side.
+
+The rays change with the projection. Under **orthogonal** they drop straight
+down; press `o` and they swing to start at the south pole instead, which is what
+stereographic projection is. Everything else in the pane stays put, because
+nothing about the sphere depends on how you choose to flatten it.
+
+Drag to turn the camera, wheel to zoom, double-click to go back to where you
+started. The camera is orthographic, so the silhouette is exactly the unit
+circle and a point is in front exactly when it is on the camera's side of the
+plane through the centre — hidden lines are cut on that boundary rather than
+guessed at, and what goes round the back is drawn faintly through the ball.
+Dragging here only turns the camera; the construction is edited on the disk.
+
+## Two ways of looking at it
+
+The disk is the hemisphere drawn flat, and there is more than one way to draw it
+flat. `o` switches between them; the model, the tools and every measurement are
+untouched — only where a point of the sphere lands on the page.
+
+| | **orthogonal** (default) | **conformal** (`o`) |
+| --- | --- | --- |
+| how | straight down: drop `z` | from the south pole: `(x,y)/(1+z)` |
+| a line is | half an ellipse, semi-axes 1 and `\|n_z\|` | an arc of a circle, centre `(n₁,n₂)/n₃`, radius `1/\|n₃\|` |
+| angles | distorted away from the centre | **true everywhere** — the right-angle marks square up |
+| distance | `arccos\|p·q\|`, rim at exactly π/2 | not read off the page |
+| in GCLC | `drawellipsearc2` | `drawellipsearc2` on a circle |
+
+Both fix the rim, so opposite boundary points stay identified either way, and a
+diameter stays a diameter in both. The conformal view is the one to reach for
+when the figure is *about* angles; the orthogonal one when it is about distance.
 
 ## Exporting to GCLC
 
@@ -165,7 +212,8 @@ name the orthocentre — then drag a vertex and watch the three stay concurrent.
 | [elliptic/viewer.py](elliptic/viewer.py) | palette, rendering, mouse and key handling |
 | [elliptic/gclc.py](elliptic/gclc.py) | the GCLC exporter |
 | [main.py](main.py) | entry point |
-| [tests/](tests/) | `python3 -m tests` — 122 checks over the maths, the model, the export and the tools |
+| [docs/](docs/) | `make -C docs` — the mathematics written out: both projections, every object, with proofs |
+| [tests/](tests/) | `python3 -m tests` — 144 checks over the maths, the model, the export and the tools |
 
 Nothing in the construction stores a position or a normal: every object holds
 references to the objects it was built from and re-derives itself on demand.

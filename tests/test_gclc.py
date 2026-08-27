@@ -22,7 +22,7 @@ from elliptic.model import SEGMENT, Construction
 # every command the exporter is allowed to write
 COMMANDS = {"dim", "ang_picture", "ang_origin", "ang_unit", "ang_point",
             "circle", "drawcircle", "drawdashcircle", "drawarc_p",
-            "drawellipsearc", "drawellipsearc2", "drawsegment", "drawdashsegment",
+            "drawellipsearc2", "drawdashellipsearc2", "drawsegment", "drawdashsegment",
             "drawpoint", "color", "linethickness",
             "cmark_lt", "cmark_rt", "cmark_lb", "cmark_rb"}
 
@@ -72,7 +72,7 @@ def test_only_known_gclc_commands_are_written():
     text = gclc.to_gclc(sample_construction())
     used = {words[0] for words in statements(text)}
     assert used <= COMMANDS, f"unexpected commands: {sorted(used - COMMANDS)}"
-    assert {"dim", "ang_point", "drawellipsearc", "drawellipsearc2"} <= used
+    assert {"dim", "ang_point", "drawellipsearc2"} <= used
 
 
 def test_the_file_opens_with_its_dimensions_and_coordinate_system():
@@ -118,8 +118,9 @@ def test_a_line_is_one_arc_not_a_chain_of_segments():
     a, b = c.add_point(0.5, 0.35), c.add_point(-0.45, 0.15)
     c.add_line(a, b)
     words = list(statements(gclc.to_gclc(c)))
-    arcs = [w for w in words if w[0] == "drawellipsearc"]
-    assert len(arcs) == 1 and arcs[0][-1] == "180", "half an ellipse, in one command"
+    arcs = [w for w in words if w[0] == "drawellipsearc2"]
+    assert len(arcs) == 1, "half an ellipse, in one command"
+    assert abs(float(arcs[0][-1]) - 180.0) < 1e-6, "and that half is a half turn"
     assert not [w for w in words if w[0] == "drawsegment"], "and nothing straight"
 
 
@@ -130,9 +131,8 @@ def test_a_triangle_draws_no_straight_pieces_at_all():
     c.add_triangle(a, b, d)
     words = list(statements(gclc.to_gclc(c)))
     assert not [w for w in words if w[0] in ("drawsegment", "drawdashsegment")]
-    # three sides, each a faint whole ellipse plus the piece, and three angle marks
-    assert len([w for w in words if w[0] == "drawellipsearc"]) == 3
-    assert len([w for w in words if w[0] == "drawellipsearc2"]) == 6
+    # three sides, each a faint whole conic plus the piece, and three angle marks
+    assert len([w for w in words if w[0] == "drawellipsearc2"]) == 9
 
 
 def test_an_angle_mark_is_an_arc_of_its_own_ellipse():
@@ -189,12 +189,14 @@ def test_a_segment_that_leaves_through_the_rim_comes_back_as_two_arcs():
     a, b = c.add_point(0.93, 0.1), c.add_point(-0.9, 0.2)
     seg = c.add_line(a, b, SEGMENT)
     assert len(geo.segment_arcs(*seg.endpoints())) == 2, "the model splits it"
-    arcs = [w for w in statements(gclc.to_gclc(c)) if w[0] == "drawellipsearc2"]
-    assert len(arcs) == 2, "and so does the file"
+    words = list(statements(gclc.to_gclc(c)))
+    arcs = [w for w in words if w[0] == "drawellipsearc2"]
+    assert len(arcs) == 3, "the two pieces, plus the whole line behind them"
     for arc in arcs:
         offset, sweep = float(arc[-2]), float(arc[-1])
-        assert 0.0 <= offset <= 180.0 and 0.0 < sweep <= 180.0
-        assert offset + sweep <= 180.0 + 1e-6, "each piece stays in the half the disk shows"
+        assert 0.0 <= offset <= 360.0 and 0.0 < sweep <= 180.0
+    pieces = [a for a in arcs if float(a[-1]) < 180.0 - 1e-6]
+    assert len(pieces) == 2 and sum(float(a[-1]) for a in pieces) < 180.0 + 1e-6
 
 
 def test_colours_come_across_as_gclc_triples():
@@ -219,15 +221,17 @@ def test_plain_drops_the_colour_and_dashes_the_construction_lines():
     c.add_line(a, b, SEGMENT)
     plain = gclc.to_gclc(c, plain=True)
     assert not [w for w in statements(plain) if w[0] == "color"], "no colour at all"
-    assert "drawdashellipsearc Ocentre" in plain, "the whole line, dashed"
-    assert "drawellipsearc2 Ocentre" in plain, "the segment itself, solid"
+    assert "drawdashellipsearc2 Ocentre" in plain, "the whole line, dashed"
+    assert "\ndrawellipsearc2 Ocentre" in plain, "the segment itself, solid"
     assert "Drawn plain" in plain, "and the header says so"
 
     coloured = gclc.to_gclc(c)
     assert [w for w in statements(coloured) if w[0] == "color"], "unlike the default"
-    assert "drawdashellipsearc" not in coloured
+    assert "drawdashellipsearc" not in coloured, "only the rim is dashed in colour"
     for text in (plain, coloured):  # the geometry is the same either way
-        assert [w for w in statements(text) if w[0] == "ang_point" and w[1] == "aEnd"]
+        assert [w for w in statements(text) if w[0] == "ang_point" and w[1] == "aX"]
+    arcs = lambda text: [w[1:] for w in statements(text) if w[0].endswith("ellipsearc2")]
+    assert arcs(plain) == arcs(coloured), "the same arcs in the same places, other ink"
 
 
 def test_plain_dashes_the_degenerate_lines_too():
@@ -239,6 +243,38 @@ def test_plain_dashes_the_degenerate_lines_too():
         plain = gclc.to_gclc(c, plain=True)
         # the rim is a dashed circle in every file, so count rather than search
         assert plain.count(expected) >= 1 + (expected == "drawdashcircle")
+
+
+def test_the_conformal_view_exports_circles_instead_of_ellipses():
+    c = Construction()
+    a, b = c.add_point(0.5, 0.35), c.add_point(-0.45, 0.15)
+    line = c.add_line(a, b)
+    text = gclc.to_gclc(c, projection=geo.STEREOGRAPHIC)
+    assert "View: stereographic" in text and "arc of a circle" in text
+
+    placed = {w[1]: np.array([float(w[2]), float(w[3])])
+              for w in statements(text) if w[0] == "ang_point"}
+    centre, major, minor = geo.STEREOGRAPHIC.conic(line.normal)
+    assert np.allclose(placed["aC"], centre, atol=1e-5), "the circle's centre is named"
+    for name, axis in (("aX", major), ("aY", minor)):
+        assert abs(np.linalg.norm(placed[name] - centre)
+                   - np.linalg.norm(axis)) < 1e-5, "both axes are the radius"
+    # the same construction, drawn the other way, is a different picture
+    straight = gclc.to_gclc(c)
+    assert "half an ellipse" in straight and "aC" not in straight
+
+
+def test_a_point_lands_where_the_projection_puts_it():
+    c = Construction()
+    a = c.add_point(0.6, 0.2)
+    for projection in (geo.ORTHOGONAL, geo.STEREOGRAPHIC):
+        text = gclc.to_gclc(c, projection=projection)
+        placed = [np.array([float(w[2]), float(w[3])]) for w in statements(text)
+                  if w[0] == "ang_point" and w[1] == "A"]
+        assert np.allclose(placed[0], projection.project(a.vector), atol=1e-5)
+    # and the two really do differ - the conformal view pulls points inward
+    assert (np.linalg.norm(geo.STEREOGRAPHIC.project(a.vector))
+            < np.linalg.norm(geo.ORTHOGONAL.project(a.vector)))
 
 
 def test_what_a_triangle_measures_travels_in_the_comments():
@@ -342,24 +378,28 @@ def test_gclc_draws_the_curve_the_model_says():
         print("      (no gclc on this machine - skipped)", end="")
         return
     sheet = gclc.Sheet()
-    for (ax, ay), (bx, by), kind in [((0.5, 0.35), (-0.45, 0.15), None),
-                                     ((0.5, 0.35), (-0.45, 0.15), SEGMENT),
-                                     ((0.62, 0.3), (-0.2, -0.75), SEGMENT)]:
-        c = Construction()
-        line = c.add_line(c.add_point(ax, ay), c.add_point(bx, by), kind or "line")
-        with tempfile.TemporaryDirectory() as folder:
-            svg = compile_with_gclc(gclc.to_gclc(c), folder)
-        pieces = drawn_pieces(svg, line.color, sheet)
-        assert len(pieces) > 20, "the arc should come out as a smooth curve"
-        drawn = np.array([xy for piece in pieces for xy in piece])
-        # every drawn point is on the line, and inside the disk
-        assert max(abs(np.dot(geo.lift(*xy), line.normal)) for xy in drawn) < 3e-3
-        assert max(np.linalg.norm(xy) for xy in drawn) <= 1.0 + 1e-3
-        # and it covers what the model draws, bar gclc's own hairline inset at the ends
-        truth = (geo.line_points(line.normal, 400) if kind is None
-                 else np.vstack(geo.segment_paths(*line.endpoints(), 400)))
-        gap = max(min(np.linalg.norm(drawn - point, axis=1)) for point in truth)
-        assert gap < 0.02, f"the drawing misses part of the curve ({gap:.4f})"
+    for projection in (geo.ORTHOGONAL, geo.STEREOGRAPHIC):
+        for (ax, ay), (bx, by), kind in [((0.5, 0.35), (-0.45, 0.15), None),
+                                         ((0.5, 0.35), (-0.45, 0.15), SEGMENT),
+                                         ((0.62, 0.3), (-0.2, -0.75), SEGMENT),
+                                         ((0.93, 0.1), (-0.9, 0.2), SEGMENT)]:
+            c = Construction()
+            line = c.add_line(c.add_point(ax, ay), c.add_point(bx, by), kind or "line")
+            with tempfile.TemporaryDirectory() as folder:
+                svg = compile_with_gclc(gclc.to_gclc(c, projection=projection), folder)
+            pieces = drawn_pieces(svg, line.color, sheet)
+            assert len(pieces) > 10, "the arc should come out as a smooth curve"
+            drawn = np.array([xy for piece in pieces for xy in piece])
+            assert max(np.linalg.norm(xy) for xy in drawn) <= 1.0 + 1e-3, "in the disk"
+            # measured in the picture, not by lifting back: at the rim, lifting
+            # takes the square root of almost nothing and tells you little
+            truth = projection.project(
+                geo.line_vectors(line.normal, 2000) if kind is None
+                else np.vstack(geo.segment_vector_paths(*line.endpoints(), 2000)))
+            stray = max(min(np.linalg.norm(truth - xy, axis=1)) for xy in drawn)
+            gap = max(min(np.linalg.norm(drawn - point, axis=1)) for point in truth)
+            assert stray < 0.01, f"{projection.name} drew something off the curve"
+            assert gap < 0.02, f"{projection.name} misses part of the curve ({gap:.4f})"
 
 
 if __name__ == "__main__":

@@ -126,6 +126,18 @@ class Point:          # two different points
         if self.source is None:
             self._xy = np.array(geo.clamp_to_disk(x, y))
 
+    def place(self, vector) -> None:
+        """Reposition a free point at a point of the sphere.
+
+        The position is kept as the disk point seen straight down, whatever
+        projection the caller was looking through when it picked the vector.
+        """
+        if self.source is not None:
+            return
+        vector = np.asarray(vector, dtype=float)
+        vector = geo.upper(vector / np.linalg.norm(vector))
+        self._xy = np.array(geo.clamp_to_disk(vector[0], vector[1]))
+
     def depends_on(self, obj) -> bool:
         return self.source is not None and self.source.depends_on(obj)
 
@@ -291,6 +303,12 @@ class Construction:
         return self._register(Point(self._point_label(), self._point_color(color),
                                     _xy=np.array(geo.clamp_to_disk(x, y))),
                               self.points)
+
+    def place_point(self, vector, color: str | None = None) -> Point:
+        """A free point at a given point of the sphere, however it was picked."""
+        point = self.add_point(0.0, 0.0, color)
+        point.place(vector)
+        return point
 
     def add_line(self, p: Point, q: Point, kind: str = LINE,
                  color: str | None = None) -> Line | None:

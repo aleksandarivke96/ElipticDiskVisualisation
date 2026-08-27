@@ -171,9 +171,10 @@ def test_right_angle_marker_sits_at_the_foot():
     p = geo.lift(-0.1, -0.35)
     foot = geo.foot_of_perpendicular(p, n)
     marker = geo.right_angle_marker(foot, n, geo.perpendicular_normal(p, n), size=0.09)
-    assert marker.shape == (3, 2)
-    assert np.linalg.norm(marker - foot[:2], axis=1).max() < 0.2
-    assert np.linalg.norm(marker, axis=1).max() <= 1 + 1e-9
+    assert marker.shape == (3, 3), "three points of the sphere"
+    assert np.linalg.norm(marker - foot, axis=1).max() < 0.2
+    assert np.allclose(np.linalg.norm(marker, axis=1), 1.0), "unit vectors"
+    assert marker[:, 2].min() >= 0.0
     # At a foot on the rim the square straddles the equator whenever the
     # perpendicular heads downwards; that half would reappear on the far side of
     # the disk, so the marker is dropped rather than drawn torn.
@@ -182,6 +183,60 @@ def test_right_angle_marker_sits_at_the_foot():
     markers = [geo.right_angle_marker(rim_foot, equator, np.array([0.0, s, 0.0]),
                                       size=0.3) for s in (1.0, -1.0)]
     assert sum(m is None for m in markers) == 1
+
+
+def test_both_projections_cover_the_disk_and_undo_each_other():
+    for projection in (geo.ORTHOGONAL, geo.STEREOGRAPHIC):
+        for (x, y) in random_disk_points(200):
+            v = projection.lift(x, y)
+            assert abs(np.linalg.norm(v) - 1) < 1e-12 and v[2] >= 0.0
+            assert np.allclose(projection.project(v), [x, y], atol=1e-12)
+        for _ in range(200):
+            v = geo.upper(rng.normal(size=3))
+            v /= np.linalg.norm(v)
+            xy = projection.project(v)
+            assert np.linalg.norm(xy) <= 1.0 + 1e-12, "the hemisphere fills the disk"
+            assert np.allclose(projection.lift(*xy), v, atol=1e-9)
+        for angle in np.linspace(0.0, 2 * np.pi, 37):  # both fix the rim
+            rim = np.array([np.cos(angle), np.sin(angle), 0.0])
+            assert np.allclose(projection.project(rim), rim[:2], atol=1e-12)
+
+
+def test_stereographic_turns_lines_into_circles():
+    """(x, y)/(1 + z) sends the plane n.x = 0 to the circle about (n1,n2)/n3."""
+    for (ax, ay), (bx, by) in zip(random_disk_points(200), random_disk_points(200)):
+        n = geo.line_normal(geo.lift(ax, ay), geo.lift(bx, by))
+        shape = geo.STEREOGRAPHIC.conic(n)
+        if shape is None:
+            assert abs(n[2]) < geo.EPS, "only a diameter has no circle"
+            continue
+        centre, major, minor = shape
+        radius = np.linalg.norm(major)
+        assert abs(radius - np.linalg.norm(minor)) < 1e-12, "a circle, not an ellipse"
+        assert np.allclose(centre, np.array([n[0], n[1]]) / n[2], atol=1e-12)
+        assert abs(radius - 1.0 / abs(n[2])) < 1e-12
+        for v in geo.line_vectors(n, 101):
+            drawn = geo.STEREOGRAPHIC.project(v)
+            assert abs(np.linalg.norm(drawn - centre) - radius) < 1e-9
+
+
+def test_stereographic_keeps_the_angles():
+    """It is conformal: the angle at a vertex is the angle you see on the page."""
+    for (ax, ay), (bx, by), (cx, cy) in zip(*[random_disk_points(120) for _ in range(3)]):
+        a, b, c = geo.lift(ax, ay), geo.lift(bx, by), geo.lift(cx, cy)
+        true_angle = geo.arc_angle(a, b, c)
+        if true_angle is None or min(geo.distance(a, b), geo.distance(a, c)) < 0.2:
+            continue
+        # walk a whisker along each side and measure the angle in the picture
+        tiny = 1e-4
+        centre = geo.STEREOGRAPHIC.project(a)
+        legs = []
+        for far in (b, c):
+            step = np.cos(tiny) * a + np.sin(tiny) * geo.tangent(a, far)
+            legs.append(geo.STEREOGRAPHIC.project(step) - centre)
+        drawn = np.arccos(np.clip(np.dot(*[leg / np.linalg.norm(leg) for leg in legs]),
+                                  -1.0, 1.0))
+        assert abs(drawn - true_angle) < 1e-3, "conformal: angles come out true"
 
 
 def test_a_line_is_half_an_ellipse_about_the_centre():
@@ -351,10 +406,10 @@ def test_ordinary_triangles_do_bound_a_disk():
 def test_angle_arc_hugs_its_vertex_and_is_dropped_at_the_rim():
     a, b, c = geo.lift(0.1, 0.2), geo.lift(0.7, 0.1), geo.lift(-0.2, 0.6)
     arc = geo.angle_arc(a, b, c, radius=0.13)
-    assert arc is not None
-    assert abs(np.linalg.norm(arc[0] - a[:2]) - np.sin(0.13)) < 0.02
+    assert arc is not None and arc.shape[1] == 3, "points of the sphere"
     for point in arc:  # every sample really is 0.13 from the vertex
-        assert abs(geo.distance(a, geo.lift(*point)) - 0.13) < 1e-9
+        assert abs(geo.distance(a, point) - 0.13) < 1e-12
+        assert point[2] >= 0.0, "and on the half the disk shows"
     rim = geo.lift(1.0, 0.0)
     assert geo.angle_arc(rim, b, c, radius=0.13) is None, "would tear at the rim"
     assert geo.angle_arc(a, b, b) is None, "no angle between an arc and itself"
@@ -363,6 +418,36 @@ def test_angle_arc_hugs_its_vertex_and_is_dropped_at_the_rim():
 def test_clamp_to_disk():
     assert np.allclose(geo.clamp_to_disk(3.0, 4.0), (0.6, 0.8))
     assert np.allclose(geo.clamp_to_disk(0.3, 0.4), (0.3, 0.4))
+
+
+def test_a_point_lands_in_the_plane_of_the_disk():
+    """Both projections drop into z = 0, which is what lets one 3-D view show both."""
+    for x, y in [(0.0, 0.0), (0.4, -0.55), (-0.9, 0.2), (0.6, 0.8)]:
+        for projection in (geo.ORTHOGONAL, geo.STEREOGRAPHIC):
+            v = projection.lift(x, y)
+            landing = projection.landing(v)
+            assert landing[2] == 0.0
+            assert np.allclose(landing[:2], (x, y), atol=1e-9)
+            assert np.linalg.norm(landing) <= 1.0 + 1e-9
+
+
+def test_the_sight_line_of_each_projection():
+    """The 3-D view draws these, so they have to be the real lines of sight."""
+    for x, y in [(0.15, 0.25), (-0.5, 0.4), (0.8, -0.1)]:
+        v = geo.ORTHOGONAL.lift(x, y)
+        ray = geo.ORTHOGONAL.ray(v)
+        assert np.allclose(ray[0], v), "it starts at the point itself"
+        assert np.allclose(ray[1], [x, y, 0.0]), "and drops straight down"
+        assert abs(ray[0][0] - ray[1][0]) < 1e-12 and abs(ray[0][1] - ray[1][1]) < 1e-12
+
+        w = geo.STEREOGRAPHIC.lift(x, y)
+        ray = geo.STEREOGRAPHIC.ray(w)
+        south = np.array([0.0, 0.0, -1.0])
+        assert np.allclose(ray[0], south), "it starts at the south pole"
+        assert np.allclose(ray[1], [x, y, 0.0])
+        along = ray[1] - south                       # and the point is on the way
+        across = np.cross(along, w - south)
+        assert np.linalg.norm(across) < 1e-9, "the point of the sphere is on the ray"
 
 
 if __name__ == "__main__":

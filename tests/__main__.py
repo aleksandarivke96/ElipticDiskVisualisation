@@ -6,7 +6,7 @@ import importlib
 import traceback
 
 MODULES = ["tests.test_geometry", "tests.test_model", "tests.test_gclc",
-           "tests.test_viewer"]
+           "tests.test_viewer", "tests.test_ui"]
 
 
 def main() -> int:
