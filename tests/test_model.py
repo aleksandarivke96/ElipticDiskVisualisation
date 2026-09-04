@@ -377,6 +377,136 @@ def test_clear_resets_everything():
     assert c.add_point(0.0, 0.0).label == "A"
 
 
+# ---------------------------------------------------------------- circles
+
+
+def test_a_circle_follows_its_points():
+    c = Construction()
+    a, t = c.add_point(0.1, 0.1), c.add_point(0.5, 0.1)
+    circle = c.add_circle(a, t)
+    assert circle is not None and circle.kind == "circle"
+    assert abs(circle.radius() - geo.distance(a.vector, t.vector)) < 1e-12
+    t.move_to(0.8, 0.1)  # drag the through point: the circle resizes live
+    assert abs(circle.radius() - geo.distance(a.vector, t.vector)) < 1e-12
+    a.move_to(-0.3, 0.4)  # and the centre drags the whole circle with it
+    axis, radius = circle.axis_radius()
+    assert np.allclose(axis, a.vector) and abs(radius - circle.radius()) < 1e-12
+
+
+def test_degenerate_circles_are_refused():
+    c = Construction()
+    a = c.add_point(0.2, 0.3)
+    assert c.add_circle(a, a) is None, "one point is no circle"
+    b = c.add_point(0.2, 0.3)  # a second point on the very same spot
+    assert c.add_circle(a, b) is None, "radius zero is no circle either"
+    assert not c.circles
+
+
+def test_deleting_either_point_takes_the_circle():
+    for doomed in ("centre", "through"):
+        c = Construction()
+        a, t = c.add_point(0.1, 0.1), c.add_point(0.5, 0.1)
+        circle = c.add_circle(a, t)
+        c.delete(a if doomed == "centre" else t)
+        assert not c.circles, f"the circle should go with its {doomed}"
+        assert circle not in c.objects
+    # deleting the circle itself leaves both points alone
+    c = Construction()
+    a, t = c.add_point(0.1, 0.1), c.add_point(0.5, 0.1)
+    c.delete(c.add_circle(a, t))
+    assert not c.circles and len(c.points) == 2
+
+
+def test_circles_share_the_label_pool_with_lines():
+    c = Construction()
+    a, b, d = c.add_point(0.0, 0.2), c.add_point(0.4, 0.1), c.add_point(-0.3, -0.4)
+    line = c.add_line(a, b)
+    circle = c.add_circle(a, d)
+    later = c.add_line(b, d)
+    assert line.label == "a" and circle.label == "b" and later.label == "c"
+
+
+def test_undo_and_clear_take_circles_too():
+    c = Construction()
+    a, t = c.add_point(0.1, 0.1), c.add_point(0.5, 0.1)
+    c.add_circle(a, t)
+    assert c.undo() is not None and not c.circles
+    c.add_circle(a, t)
+    c.clear()
+    assert not c.circles and not c.points
+
+
+def test_a_derived_point_can_carry_a_circle():
+    """A circle about a pole through a meet follows everything upstream."""
+    c = Construction()
+    a, b, d = c.add_point(0.0, 0.3), c.add_point(0.5, -0.2), c.add_point(-0.4, -0.3)
+    first, second = c.add_line(a, b), c.add_line(a, d)
+    pole = c.add_pole(first)
+    meet = c.add_meet(first, second)
+    circle = c.add_circle(pole, meet)
+    assert circle is not None and circle.radius() is not None
+    b.move_to(0.6, 0.1)  # everything upstream moves; the circle re-derives
+    assert abs(circle.radius()
+               - geo.distance(pole.vector, meet.vector)) < 1e-12
+    c.delete(first)  # the pole dies, and the circle with it
+    assert not c.circles
+
+
+def test_bisectors_are_live_grouped_and_deleted_with_their_parents():
+    c = Construction()
+    a, b = c.add_point(0.2, 0.1), c.add_point(-0.4, 0.3)
+    d, e = c.add_point(0.1, -0.45), c.add_point(-0.2, 0.5)
+    first, second = c.add_line(a, b), c.add_line(d, e)
+    history = len(c._created)
+    made = c.add_bisectors(first, second)
+    assert made is not None and len(made) == 2
+    assert made[0].color == made[1].color, "one bisection, one colour"
+    assert len(c._created) == history + 1, "both bisectors undo as one action"
+
+    for bisector in made:
+        bn, m, n = bisector.normal, first.normal, second.normal
+        assert abs(abs(float(np.dot(bn, m))) - abs(float(np.dot(bn, n)))) < 1e-9
+    assert abs(float(np.dot(made[0].normal, made[1].normal))) < 1e-9
+
+    a.move_to(0.35, -0.2)  # drag a parent: the bisectors re-derive
+    bn, m, n = made[0].normal, first.normal, second.normal
+    assert abs(abs(float(np.dot(bn, m))) - abs(float(np.dot(bn, n)))) < 1e-9
+
+    c.delete(first)        # a parent goes: its bisectors go with it
+    assert not any(line.is_bisector for line in c.lines)
+
+
+def test_bisecting_the_same_line_is_refused():
+    c = Construction()
+    a, b = c.add_point(0.2, 0.1), c.add_point(-0.4, 0.3)
+    line = c.add_line(a, b)
+    assert c.add_bisectors(line, line) is None
+    backwards = c.add_line(b, a)  # the same elliptic line, other way round
+    assert c.add_bisectors(line, backwards) is None
+
+
+def test_a_midpoint_is_derived_and_stays_halfway():
+    c = Construction()
+    a, b = c.add_point(0.1, 0.2), c.add_point(0.6, -0.3)
+    m = c.add_midpoint(a, b)
+    assert m is not None and not m.is_free and m.kind == "midpoint"
+    assert abs(geo.distance(m.vector, a.vector)
+               - geo.distance(m.vector, b.vector)) < 1e-9
+    a.move_to(-0.4, 0.5)  # drag an end: still halfway
+    assert abs(geo.distance(m.vector, a.vector)
+               - geo.distance(m.vector, b.vector)) < 1e-9
+    c.delete(a)           # an end goes: the midpoint goes with it
+    assert not any(p is m for p in c.points)
+
+
+def test_a_midpoint_of_one_point_is_refused():
+    c = Construction()
+    a = c.add_point(0.1, 0.2)
+    b = c.add_point(0.1, 0.2)  # a second dot on the same elliptic point
+    assert c.add_midpoint(a, a) is None
+    assert c.add_midpoint(a, b) is None
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:

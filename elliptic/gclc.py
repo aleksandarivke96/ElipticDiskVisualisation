@@ -29,13 +29,23 @@ from __future__ import annotations
 import numpy as np
 
 from . import geometry as geo
-from .model import Construction, Line, Point, Triangle
+from .model import Circle, Construction, Line, Point, Triangle
 
 SIZE = 100.0          # dim SIZE SIZE; GCLC measures its picture in mm
 MARGIN = 7.0          # room around the disk for labels
 DECOR_SAMPLES = 25    # samples along a right-angle mark or an angle arc
 MIN_STEP = 0.4        # mm; samples nearer than this to the last one are dropped
 FAINT = 0.72          # how far to fade a colour that the viewer draws faintly
+# the largest and flattest conics worth naming, in disk radii.  GCLC arc angles
+# carry four decimals of a degree, and on a conic of radius R that quantisation
+# moves a point by up to ~2e-6 R - invisible at R = 500, a tenth of the disk at
+# R = 5e4; and an ellipse flatter than FLAT it does not usably render at all.
+# Both are the nearly-degenerate bands - a stereographic circle whose section
+# almost passes through the south pole, a line that is almost a diameter - and
+# both curves sit within max(FLAT, 1/(2 FAR)) of the straight thing the exactly
+# degenerate case would draw, so falling back is *more* faithful than the arc.
+FAR = 500.0
+FLAT = 1e-4
 
 RIM_COLOR = "#3f4756"
 
@@ -133,8 +143,14 @@ class Sheet:
 
         `shape` is what the projection said: (centre, major, minor), or None
         when the image is straight and the caller should draw it straight.
+        None too when the conic is bigger than FAR or flatter than FLAT: so
+        nearly degenerate that the piece inside the disk is straight to within
+        the guard itself, while an arc command on it would scatter real errors
+        or draw nothing - the caller's degenerate fallback is then the more
+        faithful drawing.
         """
-        if shape is None:
+        if (shape is None or float(np.linalg.norm(shape[1])) > FAR
+                or float(np.linalg.norm(shape[2])) < FLAT):
             return None
         centre, major, minor = shape
         middle = "Ocentre" if not np.any(centre) else self.point(f"{label}C", centre)
@@ -234,6 +250,7 @@ def _header(sheet: Sheet, construction: Construction, title: str | None) -> None
     if sheet.plain:
         sheet.comment("Drawn plain: no colour, and the rest of each line dashed.")
     sheet.comment(f"{len(construction.points)} points, {len(construction.lines)} lines, "
+                  f"{len(construction.circles)} circles, "
                   f"{len(construction.triangles)} triangles")
     sheet.comment("-" * 68)
     sheet.raw()
@@ -305,6 +322,39 @@ def _foot(sheet: Sheet, line: Line, normal: np.ndarray) -> None:
     sheet.raw(f"drawpoint {sheet.spare_point(sheet.screen(foot))}")
 
 
+def _circle(sheet: Sheet, circle: Circle) -> None:
+    """One or two arcs: a circle that dips below the equator folds up and
+    re-enters the disk on the far side, exactly as a long segment does."""
+    axis_radius = circle.axis_radius()
+    if axis_radius is None:
+        sheet.comment(f"circle {circle.label} is undetermined - nothing to draw")
+        sheet.raw()
+        return
+    sheet.comment(_describe(circle, sheet.projection))
+    sheet.color(circle.color)
+    sheet.thickness(0.5)
+    centre_vector, radius = axis_radius
+    for index, (axis, e1, e2, t0, t1) in enumerate(geo.circle_arcs(centre_vector,
+                                                                   radius)):
+        # the folded piece gets its own conic, around the antipodal axis; the F
+        # keeps its names clear of every line's, which are lowercase throughout
+        label = circle.label if index == 0 else f"{circle.label}F"
+        names = sheet.conic(label, sheet.projection.point_conic(axis, radius))
+        if names is None:  # straight, edge-on, or too outsized to arc exactly
+            sheet.polyline(sheet.screen(
+                geo.circle_arc_vectors(axis, e1, e2, radius, t0, t1)))
+            continue
+        if t1 - t0 > 2.0 * np.pi - 1e-9:  # never leaves this side: closed
+            sheet.raw(f"drawellipse {names[0]} {names[1]} {names[2]}")
+            continue
+        sheet.conic_arc(names,
+                        sheet.screen(geo.circle_point(axis, e1, e2, radius, t0)),
+                        sheet.screen(geo.circle_point(axis, e1, e2, radius, t1)),
+                        sheet.screen(geo.circle_point(axis, e1, e2, radius,
+                                                      0.5 * (t0 + t1))))
+    sheet.raw()
+
+
 def _triangle(sheet: Sheet, triangle: Triangle) -> None:
     """The sides are lines already; this is the measuring, as far as it travels."""
     sheet.comment(_describe(triangle, sheet.projection))
@@ -323,11 +373,11 @@ def _triangle(sheet: Sheet, triangle: Triangle) -> None:
         if arc is None:
             continue
         drawn = sheet.screen(arc)
-        shape = sheet.projection.point_conic(vertex, geo.ANGLE_RADIUS)
-        if shape is None or np.linalg.norm(shape[2]) < 1e-4:  # edge-on: a stroke
+        names = sheet.conic(f"{triangle.label}{corner.label}a",
+                            sheet.projection.point_conic(vertex, geo.ANGLE_RADIUS))
+        if names is None:  # edge-on or outsized: a stroke
             sheet.polyline(drawn)
             continue
-        names = sheet.conic(f"{triangle.label}{corner.label}a", shape)
         sheet.conic_arc(names, drawn[0], drawn[-1], drawn[len(drawn) // 2])
     sheet.raw()
 
@@ -347,6 +397,12 @@ def _point(sheet: Sheet, point: Point) -> None:
 
 def _describe(obj, projection: geo.Projection = geo.ORTHOGONAL) -> str:
     """The one-line note that goes above an object, in the file's comments."""
+    if isinstance(obj, Circle):
+        radius = obj.radius()
+        note = (", which makes it the polar line of its centre"
+                if radius is not None and abs(radius - geo.HALF_PI) < 1e-4 else "")
+        return (f"circle {obj.label} about {obj.centre.label} through "
+                f"{obj.through.label}, radius {radius:.4f} rad{note}")
     if isinstance(obj, Triangle):
         angles = obj.angles()
         if angles is None:
@@ -364,6 +420,9 @@ def _describe(obj, projection: geo.Projection = geo.ORTHOGONAL) -> str:
     if obj.is_polar:
         return (f"polar {obj.label} of {obj.p.label}: everything a quarter turn "
                 f"from it, {shape}")
+    if obj.is_bisector:
+        return (f"bisector {obj.label} of {obj.base.label} and {obj.other.label}: "
+                f"equal angles with both, through their meet, {shape}")
     if obj.is_segment:
         return (f"segment {obj.label} = {obj.p.label}{obj.q.label}, "
                 f"length {obj.length():.4f} rad, {shape}")
@@ -400,6 +459,8 @@ def to_gclc(construction: Construction, size: float = SIZE, margin: float = MARG
     _disk(sheet)
     for line in construction.lines:
         _line(sheet, line)
+    for circle in construction.circles:
+        _circle(sheet, circle)
     for triangle in construction.triangles:
         _triangle(sheet, triangle)
     if construction.points:

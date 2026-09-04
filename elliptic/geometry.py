@@ -92,6 +92,23 @@ def plane_basis(n: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return e1, e2
 
 
+def rotation(axis: np.ndarray, angle: float) -> np.ndarray:
+    """The rotation of the sphere about `axis` by `angle`, as a 3x3 matrix.
+
+    Rodrigues' formula.  Every isometry of the elliptic plane is one of these -
+    the plane is the sphere with antipodes identified, and the identification
+    commutes with any rotation - so turning a whole construction through one
+    moves everything while changing no distance, angle or area.
+    """
+    k = np.asarray(axis, dtype=float)
+    k = k / np.linalg.norm(k)
+    cross = np.array([[0.0, -k[2], k[1]],
+                      [k[2], 0.0, -k[0]],
+                      [-k[1], k[0], 0.0]])
+    return (np.cos(angle) * np.eye(3) + np.sin(angle) * cross
+            + (1.0 - np.cos(angle)) * np.outer(k, k))
+
+
 def is_boundary_line(n: np.ndarray) -> bool:
     """True when the line is the equator, drawn as the whole disk boundary."""
     return abs(abs(float(n[2])) - 1.0) < EPS
@@ -373,6 +390,22 @@ def polar_normal(p: np.ndarray) -> np.ndarray | None:
     return None if norm < EPS else np.asarray(p, dtype=float) / norm
 
 
+def bisector_normal(m: np.ndarray, n: np.ndarray,
+                    sign: float = 1.0) -> np.ndarray | None:
+    """Normal of one of the two angle bisectors of the lines m and n.
+
+    Two lines make two pairs of vertical angles, so they have two bisectors:
+    sign +1 and -1 give the normals m + n and m - n, normalised.  Both pass
+    through the meet, since (m +- n) . (m x n) = 0; each makes equal angles
+    with the two lines, since |(m +- n) . m| = |1 +- m.n| = |(m +- n) . n|; and
+    they are perpendicular to each other, since (m+n).(m-n) = |m|^2 - |n|^2 = 0.
+    None when the sum degenerates - the two lines are the same elliptic line.
+    """
+    b = np.asarray(m, dtype=float) + sign * np.asarray(n, dtype=float)
+    norm = float(np.linalg.norm(b))
+    return None if norm < EPS else b / norm
+
+
 def meet_vector(n1: np.ndarray, n2: np.ndarray) -> np.ndarray | None:
     """The point where two lines cross, as a lifted vector.
 
@@ -387,6 +420,19 @@ def meet_vector(n1: np.ndarray, n2: np.ndarray) -> np.ndarray | None:
 def nearest_representative(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Whichever of +-b is the nearer end of the shortest arc from a."""
     return np.asarray(b, dtype=float) if float(np.dot(a, b)) >= 0.0 else -np.asarray(b, float)
+
+
+def midpoint_vector(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """The midpoint of the shortest segment from a to b.
+
+    The nearer representative of b, averaged with a and pushed back onto the
+    sphere: it lies on their line, the same distance from either end.  Never
+    degenerate - |a + b'|^2 = 2 + 2|a.b| >= 2 - though at exactly pi/2 the two
+    representatives of b are equally near and the +b end is taken, as
+    `tangent` does.  Comes back on the upper hemisphere, ready to draw.
+    """
+    total = np.asarray(a, dtype=float) + nearest_representative(a, b)
+    return upper(total / np.linalg.norm(total))
 
 
 def tangent(a: np.ndarray, b: np.ndarray) -> np.ndarray | None:
@@ -463,6 +509,68 @@ def small_circle_ellipse(a: np.ndarray, radius: float
     spread = np.sin(radius) * np.column_stack([e1[:2], e2[:2]])
     directions, lengths, _ = np.linalg.svd(spread)  # the principal axes
     return centre, directions[:, 0] * lengths[0], directions[:, 1] * lengths[1]
+
+
+def circle_arcs(a: np.ndarray, radius: float
+                ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, float, float]]:
+    """The circle of centre `a` and radius `radius`, as arcs on the upper hemisphere.
+
+    An elliptic circle is a plane section of the sphere, and each arc below is
+    (axis, e1, e2, t0, t1), its points being
+
+        cos(radius) axis + sin(radius) (cos(t) e1 + sin(t) e2).
+
+    Generically the whole circle stays above the equator and comes back as one
+    closed arc.  A circle around a centre near the rim dips below, and the
+    submerged part folds up as a second arc with everything negated - the same
+    fold a segment makes when it leaves through the rim - re-entering the disk
+    on the far side.  The cut is where z changes sign, worked out analytically,
+    so the pieces do not depend on how finely they are drawn.
+    """
+    a = np.asarray(a, dtype=float)
+    e1, e2 = plane_basis(a)
+    # At the largest elliptic radius the two signed plane sections coincide:
+    # the circle is the polar line of its centre.  The generic fold below would
+    # return that same upper-hemisphere arc twice.
+    if abs(float(radius) - HALF_PI) < EPS:
+        line_e1, line_e2, t0, t1 = line_arc(a)
+        return [(a, line_e1, line_e2, t0, t1)]
+    # z(t) = cos(r) a_z + sin(r) (e1_z cos t + e2_z sin t) = base + swing cos(t - phi)
+    base = float(np.cos(radius)) * float(a[2])
+    swing = float(np.sin(radius)) * float(np.hypot(e1[2], e2[2]))
+    if swing < EPS or base - swing >= -EPS:  # never dips below the equator
+        return [(a, e1, e2, 0.0, 2.0 * np.pi)]
+    if base + swing < EPS:  # never comes up: entirely the folded copy
+        return [(-a, -e1, -e2, 0.0, 2.0 * np.pi)]
+    phi = float(np.arctan2(e2[2], e1[2]))
+    cut = float(np.arccos(np.clip(-base / swing, -1.0, 1.0)))
+    return [(a, e1, e2, phi - cut, phi + cut),
+            (-a, -e1, -e2, phi + cut, phi - cut + 2.0 * np.pi)]
+
+
+def circle_point(axis: np.ndarray, e1: np.ndarray, e2: np.ndarray,
+                 radius: float, t: float) -> np.ndarray:
+    """The point of the sphere a circle arc reaches at parameter t."""
+    return (np.cos(radius) * np.asarray(axis, dtype=float)
+            + np.sin(radius) * (np.cos(t) * np.asarray(e1, dtype=float)
+                                + np.sin(t) * np.asarray(e2, dtype=float)))
+
+
+def circle_arc_vectors(axis: np.ndarray, e1: np.ndarray, e2: np.ndarray,
+                       radius: float, t0: float, t1: float,
+                       samples: int = 256) -> np.ndarray:
+    """A circle arc sampled into an (N, 3) array of points on the sphere."""
+    t = np.linspace(t0, t1, samples)
+    return (np.cos(radius) * np.asarray(axis, dtype=float)
+            + np.sin(radius) * (np.cos(t)[:, None] * np.asarray(e1, dtype=float)
+                                + np.sin(t)[:, None] * np.asarray(e2, dtype=float)))
+
+
+def circle_vector_paths(a: np.ndarray, radius: float,
+                        samples: int = 256) -> list[np.ndarray]:
+    """The whole elliptic circle, sampled on the sphere, in one or two pieces."""
+    return [circle_arc_vectors(axis, e1, e2, radius, t0, t1, samples)
+            for axis, e1, e2, t0, t1 in circle_arcs(a, radius)]
 
 
 def angle_arc(a: np.ndarray, b: np.ndarray, c: np.ndarray,

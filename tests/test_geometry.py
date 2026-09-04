@@ -450,6 +450,129 @@ def test_the_sight_line_of_each_projection():
         assert np.linalg.norm(across) < 1e-9, "the point of the sphere is on the ray"
 
 
+# ---------------------------------------------------------------- circles
+
+
+def test_a_circle_is_everything_at_its_radius():
+    for (ax, ay), radius in zip(random_disk_points(100),
+                                rng.uniform(0.05, geo.HALF_PI, 100)):
+        a = geo.lift(ax, ay)
+        for path in geo.circle_vector_paths(a, radius):
+            assert np.all(np.abs(np.linalg.norm(path, axis=1) - 1) < 1e-9)
+            assert np.all(path[:, 2] > -1e-6), "every drawn point is upper"
+            d = np.arccos(np.clip(np.abs(path @ a), -1.0, 1.0))
+            assert np.allclose(d, radius, atol=1e-9), "all of it at distance r"
+
+
+def test_a_circle_folds_exactly_when_it_dips_below_the_equator():
+    """One closed piece while centre-depth + radius stays under pi/2; else two."""
+    for (ax, ay), radius in zip(random_disk_points(200),
+                                rng.uniform(0.05, geo.HALF_PI, 200)):
+        a = geo.lift(ax, ay)
+        depth = np.arccos(np.clip(a[2], -1.0, 1.0))  # how far a is from the pole
+        if abs(depth + radius - geo.HALF_PI) < 1e-3:
+            continue  # tangent to the rim: either answer is honest
+        pieces = geo.circle_vector_paths(a, radius)
+        if depth + radius < geo.HALF_PI:
+            assert len(pieces) == 1
+            assert np.allclose(pieces[0][0], pieces[0][-1], atol=1e-9), "closed"
+        else:
+            assert len(pieces) == 2, "through the rim and back on the far side"
+            for piece in pieces:
+                for end in (piece[0], piece[-1]):
+                    assert abs(np.hypot(end[0], end[1]) - 1) < 1e-9, "ends on the rim"
+            # the fold re-enters at the antipodal boundary points
+            assert np.allclose(pieces[0][-1][:2], -pieces[1][0][:2], atol=1e-9)
+            assert np.allclose(pieces[0][0][:2], -pieces[1][-1][:2], atol=1e-9)
+
+
+def test_the_circle_cut_is_analytic_not_sampled():
+    a = geo.lift(0.82, 0.1)
+    coarse = geo.circle_vector_paths(a, 0.6, samples=24)
+    fine = geo.circle_vector_paths(a, 0.6, samples=2048)
+    assert len(coarse) == len(fine) == 2
+    for lo, hi in zip(coarse, fine):
+        assert np.allclose(lo[0], hi[0], atol=1e-12)
+        assert np.allclose(lo[-1], hi[-1], atol=1e-12)
+
+
+def test_a_circle_of_radius_half_pi_is_the_polar_of_its_centre():
+    for ax, ay in random_disk_points(50):
+        a = geo.lift(ax, ay)
+        paths = geo.circle_vector_paths(a, geo.HALF_PI)
+        assert len(paths) == 1, "the polar line must not be drawn twice"
+        for path in paths:
+            assert np.all(np.abs(path @ a) < 1e-9), "it lies on the polar line"
+
+
+def test_the_projected_circle_lies_on_its_point_conic():
+    """The exporter's whole premise: each arc's image is an arc of the conic
+    `point_conic` names, under either projection - the folded arc included."""
+    for (ax, ay), radius in zip(random_disk_points(60),
+                                rng.uniform(0.1, geo.HALF_PI - 0.05, 60)):
+        a = geo.lift(ax, ay)
+        for projection in (geo.ORTHOGONAL, geo.STEREOGRAPHIC):
+            for axis, e1, e2, t0, t1 in geo.circle_arcs(a, radius):
+                shape = projection.point_conic(axis, radius)
+                if shape is None or np.linalg.norm(shape[2]) < 1e-4:
+                    continue  # edge-on or straight: drawn as samples instead
+                centre, major, minor = shape
+                drawn = projection.project(
+                    geo.circle_arc_vectors(axis, e1, e2, radius, t0, t1, 64))
+                s1 = (drawn - centre) @ major / float(major @ major)
+                s2 = (drawn - centre) @ minor / float(minor @ minor)
+                assert np.allclose(s1 * s1 + s2 * s2, 1.0, atol=1e-7), \
+                    f"{projection.name} arc strays off its conic"
+
+
+def test_circle_point_and_arc_vectors_agree():
+    a = geo.lift(0.3, -0.2)
+    (axis, e1, e2, t0, t1), = geo.circle_arcs(a, 0.4)
+    path = geo.circle_arc_vectors(axis, e1, e2, 0.4, t0, t1, 7)
+    for i, t in enumerate(np.linspace(t0, t1, 7)):
+        assert np.allclose(path[i], geo.circle_point(axis, e1, e2, 0.4, t))
+
+
+def test_bisector_normals_halve_the_angle_and_are_perpendicular():
+    rng = np.random.default_rng(11)
+    for _ in range(200):
+        m = rng.normal(size=3); m /= np.linalg.norm(m)
+        n = rng.normal(size=3); n /= np.linalg.norm(n)
+        if abs(float(np.dot(m, n))) > 1.0 - 1e-6:
+            continue
+        both = [geo.bisector_normal(m, n, sign) for sign in (1.0, -1.0)]
+        meet = geo.meet_vector(m, n)
+        for b in both:
+            assert abs(np.linalg.norm(b) - 1.0) < 1e-12
+            assert abs(float(np.dot(b, meet))) < 1e-9, "through the meet"
+            assert abs(abs(float(np.dot(b, m)))
+                       - abs(float(np.dot(b, n)))) < 1e-9, "equal angles"
+        assert abs(float(np.dot(both[0], both[1]))) < 1e-9, "perpendicular pair"
+
+
+def test_bisecting_a_line_with_itself_degenerates():
+    m = np.array([0.3, -0.4, 0.866])
+    m /= np.linalg.norm(m)
+    assert geo.bisector_normal(m, m, -1.0) is None
+    same = geo.bisector_normal(m, m, 1.0)
+    assert abs(abs(float(np.dot(same, m))) - 1.0) < 1e-12, "the line itself"
+
+
+def test_the_midpoint_is_halfway_along_the_segment():
+    rng = np.random.default_rng(13)
+    for _ in range(200):
+        a = rng.normal(size=3); a /= np.linalg.norm(a); a = geo.upper(a)
+        b = rng.normal(size=3); b /= np.linalg.norm(b); b = geo.upper(b)
+        if abs(float(np.dot(a, b))) > 1.0 - 1e-6:
+            continue
+        m = geo.midpoint_vector(a, b)
+        assert abs(np.linalg.norm(m) - 1.0) < 1e-12
+        assert m[2] > -geo.EPS, "drawn representative"
+        assert abs(float(np.dot(m, np.cross(a, b)))) < 1e-9, "on their line"
+        assert abs(geo.distance(m, a) - geo.distance(m, b)) < 1e-9
+        assert abs(geo.distance(m, a) - geo.distance(a, b) / 2.0) < 1e-9
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:

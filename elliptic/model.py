@@ -34,6 +34,7 @@ LINE = "line"
 SEGMENT = "segment"
 PERPENDICULAR = "perpendicular"
 POLAR = "polar"
+BISECTOR = "bisector"
 
 
 def _next_label(used: set[str], alphabet: str) -> str:
@@ -88,6 +89,27 @@ class Pole:
         return f"pole of {self.line.label}"
 
 
+@dataclass(eq=False)
+class Midpoint:
+    """A point pinned to the middle of the shortest segment between two points."""
+
+    p: "Point"
+    q: "Point"
+    kind = "midpoint"
+
+    def vector(self) -> np.ndarray | None:
+        a, b = self.p.vector, self.q.vector
+        if a is None or b is None:
+            return None
+        return geo.midpoint_vector(a, b)
+
+    def depends_on(self, obj) -> bool:
+        return obj is self.p or obj is self.q
+
+    def describe(self) -> str:
+        return f"midpoint of {self.p.label}{self.q.label}"
+
+
 @dataclass(eq=False)  # identity, not value: two dots at the same spot are still
 class Point:          # two different points
     """A free point carrying a position, or a derived one carrying a `source`."""
@@ -95,7 +117,7 @@ class Point:          # two different points
     label: str
     color: str
     _xy: np.ndarray | None = None
-    source: Meet | Pole | None = None
+    source: Meet | Pole | Midpoint | None = None
 
     @property
     def is_free(self) -> bool:
@@ -149,16 +171,23 @@ class Line:
     way the normal is derived on demand, so everything follows when a point
     moves."""
 
-    p: Point
+    p: Point | None
     q: Point | None
     kind: str
     label: str
     color: str
     base: "Line | None" = None
+    other: "Line | None" = None  # a bisector's second parent line
+    sign: float = 1.0            # which of the two bisectors this one is
 
     @property
     def normal(self) -> np.ndarray | None:
         """Unit normal of the great circle, or None where it is undetermined."""
+        if self.kind == BISECTOR:
+            m, n = self.base.normal, self.other.normal
+            if m is None or n is None:
+                return None
+            return geo.bisector_normal(m, n, self.sign)
         vector = self.p.vector
         if vector is None:
             return None
@@ -185,6 +214,10 @@ class Line:
         return self.kind == POLAR
 
     @property
+    def is_bisector(self) -> bool:
+        return self.kind == BISECTOR
+
+    @property
     def is_partial(self) -> bool:
         """Drawn as a highlighted piece of the whole line."""
         return self.kind in (SEGMENT, PERPENDICULAR)
@@ -192,8 +225,10 @@ class Line:
     @property
     def foot(self) -> np.ndarray | None:
         """Where a perpendicular lands on its base, as a unit vector."""
+        if self.p is None or self.base is None:
+            return None
         vector = self.p.vector
-        if self.base is None or vector is None:
+        if vector is None:
             return None
         base_normal = self.base.normal
         if base_normal is None:
@@ -201,7 +236,8 @@ class Line:
         return geo.foot_of_perpendicular(vector, base_normal)
 
     def depends_on(self, obj) -> bool:
-        return obj is self.p or obj is self.q or obj is self.base
+        return (obj is self.p or obj is self.q or obj is self.base
+                or obj is self.other)
 
     def length(self) -> float | None:
         """Segment length, or the point-to-line distance for a perpendicular.
@@ -209,6 +245,8 @@ class Line:
         None for a whole line, which has no ends, and wherever the line itself
         is undetermined.
         """
+        if self.p is None:  # a bisector: a whole line, built on lines alone
+            return None
         vector = self.p.vector
         if vector is None or self.kind == POLAR:
             return None
@@ -220,6 +258,8 @@ class Line:
 
     def endpoints(self) -> tuple[np.ndarray, np.ndarray] | None:
         """The two ends of the highlighted piece, as unit vectors."""
+        if self.p is None:  # a bisector has no ends of its own
+            return None
         vector = self.p.vector
         if vector is None or self.kind == POLAR:
             return None
@@ -281,13 +321,45 @@ class Triangle:
         return any(obj is side for side in self.sides)
 
 
-Object = Point | Line | Triangle
+@dataclass(eq=False)
+class Circle:
+    """The circle about one point through another: everything at that distance.
+
+    The radius is not stored - it is however far `through` happens to be from
+    `centre` right now, so dragging either point resizes the circle live.  At
+    radius pi/2 the circle degenerates into the polar line of its centre: in
+    this geometry a big enough circle *is* a line.
+    """
+
+    centre: Point
+    through: Point
+    label: str
+    color: str
+    kind = "circle"
+
+    def radius(self) -> float | None:
+        a, b = self.centre.vector, self.through.vector
+        return None if a is None or b is None else geo.distance(a, b)
+
+    def axis_radius(self) -> tuple[np.ndarray, float] | None:
+        """Centre vector and radius, or None while there is nothing to draw."""
+        a, radius = self.centre.vector, self.radius()
+        if a is None or radius is None or radius < geo.EPS:
+            return None
+        return a, radius
+
+    def depends_on(self, obj) -> bool:
+        return obj is self.centre or obj is self.through
+
+
+Object = Point | Line | Circle | Triangle
 
 
 @dataclass
 class Construction:
     points: list[Point] = field(default_factory=list)
     lines: list[Line] = field(default_factory=list)
+    circles: list[Circle] = field(default_factory=list)
     triangles: list[Triangle] = field(default_factory=list)
     # one entry per user action, so a tool that makes four objects undoes as one
     _created: list[list[Object]] = field(default_factory=list)
@@ -295,7 +367,7 @@ class Construction:
 
     @property
     def objects(self) -> list[Object]:
-        return [*self.points, *self.lines, *self.triangles]
+        return [*self.points, *self.lines, *self.circles, *self.triangles]
 
     # ------------------------------------------------------------- building
 
@@ -349,6 +421,41 @@ class Construction:
         return self._register(Point(self._point_label(), self._point_color(color),
                                     source=Pole(line)), self.points)
 
+    def add_midpoint(self, p: Point, q: Point,
+                     color: str | None = None) -> Point | None:
+        """The midpoint of the shortest segment between two points.
+
+        A derived point: drag either end and it stays halfway.  None when the
+        two are the same elliptic point, where there is nothing to halve.
+        """
+        a, b = p.vector, q.vector
+        if (p is q or a is None or b is None
+                or abs(float(np.dot(a, b))) > 1.0 - geo.EPS):
+            return None
+        return self._register(Point(self._point_label(), self._point_color(color),
+                                    source=Midpoint(p, q)), self.points)
+
+    def add_bisectors(self, first: Line, second: Line,
+                      color: str | None = None) -> tuple["Line", "Line"] | None:
+        """Both angle bisectors of a pair of lines, as one grouped action.
+
+        Two lines make two pairs of vertical angles, so two bisectors - always
+        perpendicular to each other, crossing at the meet.  They share one
+        colour, since they are one bisection.  None when the two are the same
+        elliptic line, where there is no angle to halve.
+        """
+        m, n = first.normal, second.normal
+        if (first is second or m is None or n is None
+                or abs(float(np.dot(m, n))) > 1.0 - geo.EPS):
+            return None
+        with self.group():
+            ink = self._line_color(color)
+            return tuple(
+                self._register(Line(None, None, BISECTOR, self._line_label(),
+                                    ink, base=first, other=second, sign=sign),
+                               self.lines)
+                for sign in (1.0, -1.0))
+
     def add_meet(self, first: Line, second: Line, color: str | None = None) -> Point | None:
         """Name the point where two lines cross. None if they are the same line."""
         if first is second:
@@ -358,6 +465,20 @@ class Construction:
             return None
         return self._register(Point(self._point_label(), self._point_color(color),
                                     source=source), self.points)
+
+    def add_circle(self, centre: Point, through: Point,
+                   color: str | None = None) -> Circle | None:
+        """The circle about `centre` passing through `through`.
+
+        None when the two are one and the same elliptic point, where the radius
+        is zero and there is nothing to draw.
+        """
+        if centre is through or centre.vector is None or through.vector is None:
+            return None
+        if geo.line_normal(centre.vector, through.vector) is None:
+            return None  # equal or antipodal: the radius is zero either way
+        return self._register(Circle(centre, through, self._line_label(),
+                                     self._line_color(color)), self.circles)
 
     def add_triangle(self, a: Point, b: Point, c: Point,
                      color: str | None = None) -> Triangle | None:
@@ -382,13 +503,17 @@ class Construction:
         return _next_label({p.label for p in self.points}, ascii_uppercase)
 
     def _line_label(self) -> str:
-        return _next_label({l.label for l in self.lines}, ascii_lowercase)
+        # lines and circles draw from one pool, so no two curves share a name
+        return _next_label({l.label for l in self.lines}
+                           | {c.label for c in self.circles}, ascii_lowercase)
 
     def _point_color(self, color: str | None = None) -> str:
         return color or PALETTE[len(self.points) % len(PALETTE)]
 
     def _line_color(self, color: str | None = None) -> str:
-        return color or PALETTE[(len(self.lines) + 2) % len(PALETTE)]
+        # lines and circles advance one colour cycle, as they share one label pool
+        return color or PALETTE[(len(self.lines) + len(self.circles) + 2)
+                                % len(PALETTE)]
 
     def _register(self, obj, into: list):
         into.append(obj)
@@ -412,6 +537,23 @@ class Construction:
             if self._created and not self._created[-1]:
                 self._created.pop()
 
+    # ------------------------------------------------------------- moving
+
+    def rotate(self, matrix: np.ndarray) -> int:
+        """Turn the whole construction through a rotation of the sphere.
+
+        A rotation is an isometry of the elliptic plane, so every distance,
+        angle and area survives the trip.  Only free points actually move -
+        everything derived re-derives itself from them - and nothing is
+        created, so the undo history is left alone.
+        """
+        moved = 0
+        for point in self.points:
+            if point.is_free:
+                point.place(matrix @ point.vector)
+                moved += 1
+        return moved
+
     # ------------------------------------------------------------- removing
 
     def dependents(self, obj: Object) -> list[Object]:
@@ -434,6 +576,7 @@ class Construction:
         keep = lambda item: not any(item is d for d in doomed)
         self.points = [p for p in self.points if keep(p)]
         self.lines = [l for l in self.lines if keep(l)]
+        self.circles = [c for c in self.circles if keep(c)]
         self.triangles = [t for t in self.triangles if keep(t)]
         self._created = [survivors for survivors in
                          ([o for o in step if keep(o)] for step in self._created)
@@ -452,6 +595,7 @@ class Construction:
     def clear(self) -> None:
         self.points.clear()
         self.lines.clear()
+        self.circles.clear()
         self.triangles.clear()
         self._created.clear()
 

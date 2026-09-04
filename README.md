@@ -1,8 +1,9 @@
 # Elliptic geometry — closed disk model
 
 Interactive visualisation of the **closed disk (hemisphere) model** of the elliptic
-plane: build constructions out of as many points, lines, segments and triangles
-as you like and watch them behave the way elliptic geometry says they must.
+plane: build constructions out of as many points, lines, segments, triangles
+and circles as you like and watch them behave the way elliptic geometry says
+they must.
 
 ```bash
 python3 main.py
@@ -19,12 +20,15 @@ Pick a tool on the left (or press its number), then click in the disk.
 | **Segment** | `3` | same, but draws the shortest path between the two points, with the rest of the line faint |
 | **Perpendicular** | `4` | click a point and a line, **in either order**, to drop the perpendicular from the point onto the line |
 | **Triangle** | `5` | three clicks; the sides are ordinary segments and the angles are measured |
+| **Circle** | `0` | click the centre, then any point the circle should pass through |
+| **Midpoint** | `m` | click two points for the middle of the shortest path between them |
 | **Meet** | `6` | click two lines to name the point where they cross |
+| **Bisect angle** | `n` | click two lines; both bisectors of their angles appear, as one action |
 | **Polar / Pole** | `7` | click a point for its polar line, or a line for its pole |
 | **Move** | `8` | drags a point; everything built on it follows |
 | **Delete** | `9` | removes a point (and its lines) or a line on its own |
 
-Line, Segment, Perpendicular and Triangle snap onto an existing point if you
+Line, Segment, Perpendicular, Triangle and Circle snap onto an existing point if you
 click within ~13 px of one, and otherwise create a new point where you clicked —
 so two clicks on empty space give you a line without placing its points first.
 `esc` cancels a half-finished one.
@@ -36,11 +40,25 @@ is live: move one vertex and the triangles, perpendiculars, poles and meets
 downstream of it all follow.
 
 **Show** toggles: `l` labels (and the triangle readouts), `p` poles, `x` meets
-(intersections), `e` rim ends, `o` **conformal** (see below), `b` **plain** — black ink on white, with line
+(intersections), `e` rim ends, `o` switches the default **conformal** view to
+the orthogonal one (see below), `b` **plain** — black ink on white, with line
 weight doing the work colour was doing, and the rest of each line dashed. Turn
 it on and the picture is the figure you would put in a paper; **Save GCLC**
 then exports exactly that. And for the right-hand pane: `s` shows or hides the
 **3-D sphere**, `r` its **projector** rays, `a` the **antipodes**.
+The **Rotate** slider (`←`/`→` to nudge) turns the whole construction about a
+point of your choosing — a live isometry of the plane, since a rotation about
+an elliptic point *is* the rotation of the sphere about that point's axis.
+Pick the pivot with the **Rotate about** tool (`t`): click any point — or any
+empty spot, which makes one — and it wears a small ring; with none chosen the
+figure turns about the centre of the disk. A pivot near the middle spins the
+picture; a pivot at the rim rolls the figure out through the boundary and back
+in on the far side. Watch the triangle readout while you drag: everything
+moves except the pivot, and no distance, angle or area changes — that is what
+a rigid motion of elliptic geometry means. Only free points really move
+(derived points follow), nothing lands in the undo history, choosing a new
+pivot restarts the slider at zero, and dragging it back to zero brings the
+figure back exactly.
 **Edit**: `u` undo the last action — a triangle and its three sides go together —
 `c` clear everything, `g` **Save GCLC** (a box opens over the disk: type a file
 name, press enter, `esc` cancels) — `G` saves the same thing plain, in black and
@@ -49,8 +67,8 @@ palette. Clicks outside the disk snap to the rim.
 
 `python3 main.py --points 0.35 0.45 -0.6 0.2 0.1 -0.7 --lines 0 1 --perps 2 0
 --save out.png` renders a fixed construction to an image instead of opening a
-window. `--triangles`, `--polars` and `--meets` build the rest; this draws a
-triangle, its three altitudes and the orthocentre they share:
+window. `--triangles`, `--circles`, `--polars` and `--meets` build the rest;
+this draws a triangle, its three altitudes and the orthocentre they share:
 
 ```bash
 python3 main.py --points 0.0 0.35 0.55 -0.3 -0.5 -0.25 \
@@ -73,10 +91,11 @@ representative `−v` appears, joined to it through the centre — that dotted l
 *is* the identification, and you can watch a point cross the rim on the left
 while its antipode crosses in from the other side.
 
-The rays change with the projection. Under **orthogonal** they drop straight
-down; press `o` and they swing to start at the south pole instead, which is what
-stereographic projection is. Everything else in the pane stays put, because
-nothing about the sphere depends on how you choose to flatten it.
+The rays change with the projection. In the default **conformal** view they
+start at the south pole, which is what stereographic projection is; press `o`
+and they drop straight down for the orthogonal view. Everything else in the
+pane stays put, because nothing about the sphere depends on how you choose to
+flatten it.
 
 Drag to turn the camera, wheel to zoom, double-click to go back to where you
 started. The camera is orthographic, so the silhouette is exactly the unit
@@ -91,17 +110,19 @@ The disk is the hemisphere drawn flat, and there is more than one way to draw it
 flat. `o` switches between them; the model, the tools and every measurement are
 untouched — only where a point of the sphere lands on the page.
 
-| | **orthogonal** (default) | **conformal** (`o`) |
+| | **conformal** (default) | **orthogonal** (`o`) |
 | --- | --- | --- |
-| how | straight down: drop `z` | from the south pole: `(x,y)/(1+z)` |
-| a line is | half an ellipse, semi-axes 1 and `\|n_z\|` | an arc of a circle, centre `(n₁,n₂)/n₃`, radius `1/\|n₃\|` |
-| angles | distorted away from the centre | **true everywhere** — the right-angle marks square up |
-| distance | `arccos\|p·q\|`, rim at exactly π/2 | not read off the page |
-| in GCLC | `drawellipsearc2` | `drawellipsearc2` on a circle |
+| how | from the south pole: `(x,y)/(1+z)` | straight down: drop `z` |
+| a line is | an arc of a circle, centre `(n₁,n₂)/n₃`, radius `1/\|n₃\|` | half an ellipse, semi-axes 1 and `\|n_z\|` |
+| angles | **true everywhere** — the right-angle marks square up | distorted away from the centre |
+| distance | not read off the page | `arccos\|p·q\|`, rim at exactly π/2 |
+| in GCLC | `drawellipsearc2` on a circle | `drawellipsearc2` |
 
 Both fix the rim, so opposite boundary points stay identified either way, and a
-diameter stays a diameter in both. The conformal view is the one to reach for
-when the figure is *about* angles; the orthogonal one when it is about distance.
+diameter stays a diameter in both. The default conformal view is the textbook
+disk picture, including circles that may appear as two circular arcs; the
+orthogonal view is useful when the figure is about distance. Use
+`--orthogonal` to select it on the command line.
 
 ## Exporting to GCLC
 
@@ -160,6 +181,20 @@ there to remind you of.
   gives way to it.
 * **Pole** — every line has one, the point at distance π/2 from all of it, drawn
   as a star in the line's colour.
+* **A segment really has two midpoints.** *Midpoint* halves the shortest path —
+  the one the segment tool draws — but the two points also cut their line into a
+  second, longer arc, and that one has a middle too, a quarter turn (π/2) along
+  the line from the first. Drag the ends until they are exactly π/2 apart and
+  the two halvings trade places. The midpoint is derived: it stays halfway
+  through every drag, and it goes when either end goes.
+* **Angle bisectors come in pairs.** Two lines cross in one point but make two
+  pairs of vertical angles, so *Bisect angle* draws **two** bisectors — with
+  normals `m̂+n̂` and `m̂−n̂` — always perpendicular to each other and crossing at
+  the meet. They are live: drag a parent line and both halvings follow. A good
+  thing to try: bisect the angles at two vertices of a triangle, *Meet* the two
+  interior bisectors — that is the incentre — drop a *Perpendicular* from it
+  onto a side, and the circle about the incentre through the foot is the
+  inscribed circle, tangent to all three sides through every drag.
 * **Duality** — a point and a line are the same kind of thing here. The polar of
   a point `P` is the line of everything π/2 away from it; the pole of a line is
   the point π/2 from all of it; and each undoes the other exactly. So *Polar /
@@ -196,24 +231,39 @@ there to remind you of.
   out through the rim and back in on the other side without ever enclosing a
   disk, Girard's formula has nothing to apply to, and the readout says so
   instead of printing a number. Pull one vertex back in and the area returns.
+* **Circle** — everything at one distance from a centre: a plane section of the
+  sphere, which the disk shows as a closed curve (an ellipse seen straight down,
+  a true circle in the conformal view — the centre visibly off-middle in both,
+  because the geometry's centre is not the picture's). Two clicks make one:
+  the centre, then any point it should pass through, and dragging either
+  resizes it live. Push the centre towards the rim and the far side of the
+  circle slips out through the boundary and comes back in opposite, in two
+  arcs, exactly as a long segment does. And grow the radius towards π/2 and
+  the circle flattens into a *line* — the polar of its centre, which the
+  readout names when you hit it. In this geometry a big enough circle is a
+  line, and that is duality made visible.
 
 Things worth trying: drag a triangle vertex to the rim and watch a side jump to
 the other side of the disk, and the area give up; turn on poles and see that a
 line's pole is where all its perpendiculars meet; drop the three altitudes of a
 triangle (perpendicular from each vertex to the opposite side) and use *Meet* to
-name the orthocentre — then drag a vertex and watch the three stay concurrent.
+name the orthocentre — then drag a vertex and watch the three stay concurrent;
+circle a line's pole through any point of the line and watch the circle hug the
+line itself.
 
 ## Layout
 
 | path | contents |
 | --- | --- |
-| [elliptic/geometry.py](elliptic/geometry.py) | the model: lifting, lines, segments, distance, poles, duality, angles and area |
+| [elliptic/geometry.py](elliptic/geometry.py) | the maths: lifting, lines, segments, circles, distance, duality, angles and area |
 | [elliptic/model.py](elliptic/model.py) | the construction: what is built on what, and how it comes apart again |
-| [elliptic/viewer.py](elliptic/viewer.py) | palette, rendering, mouse and key handling |
+| [elliptic/scene.py](elliptic/scene.py) | what to draw, in sphere coordinates — both panes consume it |
+| [elliptic/viewer.py](elliptic/viewer.py) | the tools: what a click does, toolkit-free |
+| [elliptic/ui/](elliptic/ui/) | the PySide6 window: the disk pane, the 3-D sphere pane |
 | [elliptic/gclc.py](elliptic/gclc.py) | the GCLC exporter |
 | [main.py](main.py) | entry point |
 | [docs/](docs/) | `make -C docs` — the mathematics written out: both projections, every object, with proofs |
-| [tests/](tests/) | `python3 -m tests` — 144 checks over the maths, the model, the export and the tools |
+| [tests/](tests/) | `python3 -m tests` — 227 checks over the maths, the model, the export and the tools |
 
 Nothing in the construction stores a position or a normal: every object holds
 references to the objects it was built from and re-derives itself on demand.
@@ -222,8 +272,8 @@ everything downstream of it with it.
 
 ## Requirements
 
-numpy, matplotlib, and any matplotlib GUI backend (PyQt6 is used here).
+numpy and PySide6.
 
 ```bash
-pip3 install --user numpy matplotlib PyQt6
+pip3 install --user numpy PySide6
 ```

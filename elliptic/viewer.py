@@ -18,7 +18,8 @@ import numpy as np
 from . import gclc
 from . import geometry as geo
 from . import scene as sc
-from .model import LINE, PALETTE, SEGMENT, Construction, Line, Point, Triangle
+from .model import (LINE, PALETTE, SEGMENT, Circle, Construction, Line, Point,
+                    Triangle)
 
 PICK_POINT_PX = 13.0
 PICK_LINE_PX = 9.0
@@ -30,9 +31,13 @@ TOOLS = [
     ("segment", "Segment", "3", "click two points for the shortest path between them"),
     ("perp", "Perpendicular", "4", "click a point and a line, in either order"),
     ("triangle", "Triangle", "5", "click three points; the angles give the area"),
+    ("circle", "Circle", "0", "click the centre, then a point on the circle"),
+    ("midpoint", "Midpoint", "m", "click two points for the middle of the shortest path"),
     ("meet", "Meet", "6", "click two lines to name the point where they cross"),
+    ("bisect", "Bisect angle", "n", "click two lines; both bisectors of their angles appear"),
     ("dual", "Polar / Pole", "7", "click a point for its polar, a line for its pole"),
     ("move", "Move", "8", "drag a point; everything built on it follows"),
+    ("pivot", "Rotate about", "t", "click the point the Rotate slider should turn around"),
     ("delete", "Delete", "9", "click a point or a line; a triangle goes with its sides"),
 ]
 TOGGLES = [
@@ -48,10 +53,19 @@ TOGGLES = [
 ]
 ACTIONS = [("undo", "Undo", "u"), ("clear", "Clear", "c"),
            ("gclc", "Save GCLC", "g")]  # shift-G saves the same thing in plain black
+# The Rotate slider turns the whole construction about a chosen point - a live
+# isometry of the plane.  A rotation about a point of the elliptic plane IS the
+# rotation of the sphere about that point's axis, so the pivot can be any point
+# of the construction; with none chosen it is the centre of the disk, and a
+# pivot on the rim rolls the figure out through the rim and in the far side.
+ARROW_STEP = 3.0  # degrees per arrow-key press
 DEFAULT_EXPORT = "construction.gcl"
 
 DEFAULT_FLAGS = {"labels": True, "poles": False, "meets": True, "rim": True,
-                 "plain": False, "conformal": False,
+                 # The textbook disk model is the stereographic picture.  Keep
+                 # the orthogonal hemisphere view available through the same
+                 # toggle, but open on the view in which its clines are circles.
+                 "plain": False, "conformal": True,
                  "sphere": True, "rays": True, "antipodes": False}
 
 
@@ -65,6 +79,8 @@ class EllipticDiskViewer:
         self.color: str | None = None  # None = cycle through the palette
         self.flags = dict(DEFAULT_FLAGS)
         self.picked: list[Point | Line] = []  # objects a half-finished tool holds
+        self.pivot: Point | None = None  # what the Rotate slider turns about
+        self.turned = 0.0                # its accumulated angle, in degrees
         self.message = ""
         self.scale = DEFAULT_SCALE
         self.on_change: list = []  # canvases that want to know when to repaint
@@ -102,7 +118,8 @@ class EllipticDiskViewer:
 
     def scene(self) -> sc.Scene:
         """Everything to draw, in sphere coordinates - see `elliptic.scene`."""
-        return sc.build(self.construction, self.flags, self.picked, self.samples)
+        return sc.build(self.construction, self.flags, self.picked, self.samples,
+                        pivot=self.live_pivot())
 
     # ------------------------------------------------------------------ projecting
 
@@ -117,6 +134,10 @@ class EllipticDiskViewer:
     def paths(self, line: Line) -> list[np.ndarray]:
         """The drawn pieces of a line, in disk coordinates."""
         return [self.screen(path) for path in sc.line_curves(line, self.samples)]
+
+    def circle_paths(self, circle: Circle) -> list[np.ndarray]:
+        """The drawn pieces of a circle, in disk coordinates."""
+        return [self.screen(path) for path in sc.circle_curves(circle, self.samples)]
 
     # ------------------------------------------------------------------ palette
 
@@ -133,6 +154,51 @@ class EllipticDiskViewer:
     def set_color(self, color: str | None) -> None:
         self.color = color
         self.message = f"colour: {color or 'auto'}"
+        self.changed()
+
+    def live_pivot(self) -> Point | None:
+        """The chosen pivot, so long as it is still part of the construction."""
+        if (self.pivot is not None
+                and not any(self.pivot is p for p in self.construction.points)):
+            self.pivot = None  # deleted or cleared away: back to the centre
+        return self.pivot
+
+    def pivot_text(self) -> str:
+        pivot = self.live_pivot()
+        return "about the centre" if pivot is None else f"about {pivot.label}"
+
+    def set_pivot(self, point: Point | None) -> None:
+        """Choose what the Rotate slider turns about; the slider starts afresh."""
+        self.pivot = point
+        self.turned = 0.0
+        self.message = ("the Rotate slider turns about the centre of the disk"
+                        if point is None else
+                        f"the Rotate slider now turns {self.pivot_text()}")
+        self.changed()
+
+    def rotate(self, degrees: float) -> None:
+        """Turn the construction about the pivot, to an accumulated `degrees`.
+
+        The slider hands in its absolute position; only the difference from
+        where it last was is applied, so dragging it back to zero brings the
+        figure back exactly.  Angles wrap at half a turn - a rotation by
+        `delta - 360` is the same rotation, so wrapping costs nothing.
+        """
+        degrees = (degrees + 180.0) % 360.0 - 180.0
+        delta = degrees - self.turned
+        if not delta:
+            return
+        pivot = self.live_pivot()
+        axis = np.array([0.0, 0.0, 1.0]) if pivot is None else pivot.vector
+        if axis is None:  # a derived pivot with nowhere to be right now
+            self.message = f"{pivot.label} is undetermined - nothing to turn about"
+            self.changed()
+            return
+        self.turned = degrees
+        moved = self.construction.rotate(geo.rotation(axis, np.radians(delta)))
+        if moved:
+            self.message = (f"turned {degrees:+.0f} deg {self.pivot_text()} - an "
+                            "isometry: every distance, angle and area is unchanged")
         self.changed()
 
     def action(self, action: str) -> None:
@@ -209,6 +275,17 @@ class EllipticDiskViewer:
                     best, best_d = line, d
         return best
 
+    def circle_at(self, x: float, y: float) -> Circle | None:
+        best, best_d = None, PICK_LINE_PX / self.scale
+        for circle in self.construction.circles:
+            for path in self.circle_paths(circle):
+                if len(path) < 2:
+                    continue
+                d = float(np.hypot(path[:, 0] - x, path[:, 1] - y).min())
+                if d <= best_d:
+                    best, best_d = circle, d
+        return best
+
     # ------------------------------------------------------------------ events
 
     def press(self, x: float, y: float) -> None:
@@ -221,9 +298,13 @@ class EllipticDiskViewer:
             "segment": lambda p: self._press_join(p, SEGMENT),
             "perp": self._press_perpendicular,
             "triangle": self._press_triangle,
+            "circle": self._press_circle,
+            "midpoint": self._press_midpoint,
             "meet": self._press_meet,
+            "bisect": self._press_bisect,
             "dual": self._press_dual,
             "move": self._press_move,
+            "pivot": self._press_pivot,
             "delete": self._press_delete,
         }[self.tool]((x, y))
         self.changed()
@@ -244,6 +325,10 @@ class EllipticDiskViewer:
             return
         if pressed == "G":  # shift: the same save, in plain black and white
             self.begin_prompt(plain=True)
+            return
+        if pressed in ("left", "right"):
+            step = ARROW_STEP if pressed == "right" else -ARROW_STEP
+            self.rotate(self.turned + step)
             return
         for table, act in ((TOOLS, self.set_tool), (TOGGLES, self.toggle),
                            (ACTIONS, self.action)):
@@ -325,6 +410,30 @@ class EllipticDiskViewer:
         self.message = ("two of those are the same elliptic point - no triangle"
                         if triangle is None else self.describe(triangle))
 
+    def _press_circle(self, at) -> None:
+        """Two clicks: the centre, then any point the circle should pass through."""
+        point = self._pick_point(at)
+        if not self.picked:
+            self.picked.append(point)
+            self.message = f"circle about {point.label} - now pick a point on it"
+            return
+        circle = self.construction.add_circle(self.picked[0], point, self.color)
+        self.picked.clear()
+        self.message = ("those are the same elliptic point - no circle to draw"
+                        if circle is None else self.describe(circle))
+
+    def _press_midpoint(self, at) -> None:
+        """Two clicks on points: the midpoint of the shortest path between them."""
+        point = self._pick_point(at)
+        if not self.picked:
+            self.picked.append(point)
+            self.message = f"midpoint from {point.label} - now pick the second point"
+            return
+        made = self.construction.add_midpoint(self.picked[0], point, self.color)
+        self.picked.clear()
+        self.message = ("those are the same elliptic point - nothing to halve"
+                        if made is None else self.describe(made))
+
     def _press_meet(self, at) -> None:
         """Two clicks on lines: name the point where they cross."""
         line = self.line_at(*at)
@@ -339,6 +448,23 @@ class EllipticDiskViewer:
         self.picked.clear()
         self.message = ("that is the same line - it meets itself everywhere"
                         if point is None else self.describe(point))
+
+    def _press_bisect(self, at) -> None:
+        """Two clicks on lines: both bisectors of the angles they make."""
+        line = self.line_at(*at)
+        if line is None:
+            self.message = "click on a line"
+            return
+        if not self.picked:
+            self.picked.append(line)
+            self.message = f"bisect between {line.label} and - now pick the second line"
+            return
+        made = self.construction.add_bisectors(self.picked[0], line, self.color)
+        self.picked.clear()
+        self.message = ("that is the same elliptic line - no angle to bisect"
+                       if made is None else
+                       f"bisectors {made[0].label} and {made[1].label} - one for "
+                       "each pair of vertical angles, perpendicular to each other")
 
     def _press_dual(self, at) -> None:
         """One click: a point gives its polar line, a line gives its pole."""
@@ -366,8 +492,12 @@ class EllipticDiskViewer:
         self._dragging = point
         self.message = f"moving {point.label}"
 
+    def _press_pivot(self, at) -> None:
+        """One click: the point the Rotate slider turns about, made if need be."""
+        self.set_pivot(self._pick_point(at))
+
     def _press_delete(self, at) -> None:
-        target = self.point_at(*at) or self.line_at(*at)
+        target = self.point_at(*at) or self.line_at(*at) or self.circle_at(*at)
         if target is None:
             self.message = "nothing to delete here"
             return
@@ -384,6 +514,15 @@ class EllipticDiskViewer:
     def describe(self, obj) -> str:
         if isinstance(obj, Triangle):
             return describe_triangle(obj)
+        if isinstance(obj, Circle):
+            r = obj.radius()
+            if r is None:
+                return f"circle {obj.label}"
+            note = (f"   at pi/2 this is the polar of {obj.centre.label}"
+                    if abs(r - geo.HALF_PI) < 1e-4 else "")
+            return (f"circle {obj.label} about {obj.centre.label} through "
+                    f"{obj.through.label}   radius {r:.4f} rad = "
+                    f"{np.degrees(r):.2f}deg{note}")
         if isinstance(obj, Point):
             xy = obj.xy
             built = "" if obj.is_free else f" = {obj.source.describe()}"
@@ -408,6 +547,9 @@ class EllipticDiskViewer:
             pole = geo.polar_point(normal)
             return (f"polar {obj.label} of {obj.p.label}   every point of it is "
                     f"pi/2 from {obj.p.label}   pole ({pole[0]:+.3f}, {pole[1]:+.3f})")
+        if obj.is_bisector:
+            return (f"bisector {obj.label} of {obj.base.label} and {obj.other.label}   "
+                    "equal angles with both, through their meet")
         return (f"line {obj.label} through {obj.p.label}{obj.q.label}   "
                 f"normal ({normal[0]:+.3f}, {normal[1]:+.3f}, {normal[2]:+.3f})   {shape}")
 
@@ -415,10 +557,12 @@ class EllipticDiskViewer:
         """What the half-finished tool is waiting for."""
         if self.tool == "perp":
             return "a line to drop onto" if isinstance(self.pending, Point) else "a point"
-        if self.tool == "meet":
+        if self.tool in ("meet", "bisect"):
             return "the second line"
         if self.tool == "triangle":
             return "the second vertex" if len(self.picked) == 1 else "the third vertex"
+        if self.tool == "circle":
+            return "a point on the circle"
         return "the second point"
 
     def status_text(self) -> str:
@@ -429,6 +573,8 @@ class EllipticDiskViewer:
         counts = (f"{len(self.construction.points)} points   "
                   f"{len(self.construction.lines)} lines   "
                   f"{len(self.construction.intersections())} meets")
+        if self.construction.circles:
+            counts += f"   {len(self.construction.circles)} circles"
         if self.construction.triangles:
             counts += f"   {len(self.construction.triangles)} triangles"
         return f"{name.upper()}: {hint}\n{self.message}\n{counts}"

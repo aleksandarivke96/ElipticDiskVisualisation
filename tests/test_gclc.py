@@ -21,7 +21,7 @@ from elliptic.model import SEGMENT, Construction
 
 # every command the exporter is allowed to write
 COMMANDS = {"dim", "ang_picture", "ang_origin", "ang_unit", "ang_point",
-            "circle", "drawcircle", "drawdashcircle", "drawarc_p",
+            "circle", "drawcircle", "drawdashcircle", "drawarc_p", "drawellipse",
             "drawellipsearc2", "drawdashellipsearc2", "drawsegment", "drawdashsegment",
             "drawpoint", "color", "linethickness",
             "cmark_lt", "cmark_rt", "cmark_lb", "cmark_rb"}
@@ -41,7 +41,8 @@ def find_gclc() -> str | None:
 
 
 def sample_construction() -> Construction:
-    """A triangle, its altitudes, the orthocentre, and a point with its polar."""
+    """A triangle, its altitudes, the orthocentre, a polar, and two circles -
+    one snug inside the disk, one folding out through the rim."""
     c = Construction()
     a, b, d = c.add_point(0.0, 0.35), c.add_point(0.55, -0.3), c.add_point(-0.5, -0.25)
     triangle = c.add_triangle(a, b, d)
@@ -49,6 +50,8 @@ def sample_construction() -> Construction:
                  for vertex, side in zip((d, a, b), triangle.sides)]
     c.add_meet(altitudes[0], altitudes[1])
     c.add_polar(c.add_point(0.8, 0.45))
+    c.add_circle(a, b)
+    c.add_circle(c.add_point(-0.75, 0.45), d)
     return c
 
 
@@ -356,6 +359,13 @@ def drawn_pieces(svg: str, color: str, sheet: gclc.Sheet):
     return [(to_disk(x1, y1), to_disk(x2, y2)) for x1, y1, x2, y2 in found]
 
 
+def ink(pieces, samples: int = 101) -> np.ndarray:
+    """The drawn ink as points, each straight piece filled in - not just its
+    ends, which is all a single long `drawsegment` would otherwise put in."""
+    t = np.linspace(0.0, 1.0, samples)[:, None]
+    return np.vstack([start + (end - start) * t for start, end in pieces])
+
+
 def test_gclc_accepts_what_we_write():
     if find_gclc() is None:
         print("      (no gclc on this machine - skipped)", end="")
@@ -382,14 +392,19 @@ def test_gclc_draws_the_curve_the_model_says():
         for (ax, ay), (bx, by), kind in [((0.5, 0.35), (-0.45, 0.15), None),
                                          ((0.5, 0.35), (-0.45, 0.15), SEGMENT),
                                          ((0.62, 0.3), (-0.2, -0.75), SEGMENT),
-                                         ((0.93, 0.1), (-0.9, 0.2), SEGMENT)]:
+                                         ((0.93, 0.1), (-0.9, 0.2), SEGMENT),
+                                         # nearly a diameter: drawn straight, and
+                                         # rightly so - it is straight to 5e-7
+                                         ((0.6, 0.0), (-0.6, 1e-6), None)]:
             c = Construction()
             line = c.add_line(c.add_point(ax, ay), c.add_point(bx, by), kind or "line")
             with tempfile.TemporaryDirectory() as folder:
                 svg = compile_with_gclc(gclc.to_gclc(c, projection=projection), folder)
             pieces = drawn_pieces(svg, line.color, sheet)
-            assert len(pieces) > 10, "the arc should come out as a smooth curve"
-            drawn = np.array([xy for piece in pieces for xy in piece])
+            straight = abs(line.normal[2]) < 1e-4  # a near-diameter may be one stroke
+            assert len(pieces) > (0 if straight else 10), \
+                "the arc should come out as a smooth curve"
+            drawn = ink(pieces)
             assert max(np.linalg.norm(xy) for xy in drawn) <= 1.0 + 1e-3, "in the disk"
             # measured in the picture, not by lifting back: at the rim, lifting
             # takes the square root of almost nothing and tells you little
@@ -400,6 +415,163 @@ def test_gclc_draws_the_curve_the_model_says():
             gap = max(min(np.linalg.norm(drawn - point, axis=1)) for point in truth)
             assert stray < 0.01, f"{projection.name} drew something off the curve"
             assert gap < 0.02, f"{projection.name} misses part of the curve ({gap:.4f})"
+
+
+# ---------------------------------------------------------------- circles
+
+
+def test_a_snug_circle_is_one_closed_ellipse():
+    c = Construction()
+    circle = c.add_circle(c.add_point(0.15, 0.1), c.add_point(0.4, 0.15))
+    text = to_check = gclc.to_gclc(c)
+    drawn = [w for w in statements(to_check) if w[0] == "drawellipse"]
+    assert len(drawn) == 1, "one command, not a chain and not two arcs"
+    assert not any(w[0] == "drawellipsearc2" for w in statements(text))
+    assert f"circle {circle.label} about A through B" in text
+
+
+def test_a_circle_through_the_rim_is_two_arcs_of_two_conics():
+    c = Construction()
+    c.add_circle(c.add_point(0.85, 0.0), c.add_point(0.3, 0.0))
+    text = gclc.to_gclc(c)
+    arcs = [w for w in statements(text) if w[0] == "drawellipsearc2"]
+    assert len(arcs) == 2, "the visible piece and the folded one"
+    assert not any(w[0] == "drawellipse" for w in statements(text))
+    assert len({w[1] for w in arcs}) == 2, "each piece has a conic of its own"
+
+
+def test_the_folded_conic_names_stay_clear_of_every_line():
+    c = Construction()
+    a, b = c.add_point(0.85, 0.0), c.add_point(0.3, 0.0)
+    c.add_circle(a, b)
+    c.add_line(a, b)
+    text = gclc.to_gclc(c)
+    named = [w[1] for w in statements(text) if w[0] == "ang_point"]
+    assert len(named) == len(set(named)) or         all(named.count(n) == 1 for n in named if n[0].islower()),         "no conic point is defined twice under one name"
+
+
+def test_the_circle_ellipse_has_the_axes_the_model_says():
+    c = Construction()
+    circle = c.add_circle(c.add_point(0.2, 0.25), c.add_point(0.45, -0.1))
+    axis, radius = circle.axis_radius()
+    centre, major, minor = geo.ORTHOGONAL.point_conic(axis, radius)
+    placed = {w[1]: np.array([float(w[2]), float(w[3])])
+              for w in statements(gclc.to_gclc(c)) if w[0] == "ang_point"}
+    label = circle.label
+    assert np.allclose(placed[f"{label}C"], centre, atol=1e-5)
+    assert np.allclose(placed[f"{label}X"], centre + major, atol=1e-5)
+    assert np.allclose(placed[f"{label}Y"], centre + minor, atol=1e-5)
+
+
+def test_the_conformal_view_draws_a_circle_as_a_circle():
+    c = Construction()
+    circle = c.add_circle(c.add_point(0.3, 0.2), c.add_point(0.55, 0.35))
+    placed = {w[1]: np.array([float(w[2]), float(w[3])])
+              for w in statements(gclc.to_gclc(c, projection=geo.STEREOGRAPHIC))
+              if w[0] == "ang_point"}
+    label = circle.label
+    spans = (np.linalg.norm(placed[f"{label}X"] - placed[f"{label}C"]),
+             np.linalg.norm(placed[f"{label}Y"] - placed[f"{label}C"]))
+    assert abs(spans[0] - spans[1]) < 1e-9, "equal axes: it really is a circle"
+
+
+def test_a_circle_of_radius_half_pi_is_named_the_polar():
+    c = Construction()
+    a = c.add_point(0.0, 0.3)
+    polar = c.add_polar(a)
+    foot = c.add_point(*geo.project(geo.line_vectors(polar.normal, 101)[50]))
+    c.add_circle(a, foot)
+    assert "the polar line of its centre" in gclc.to_gclc(c)
+
+
+def test_an_undetermined_circle_is_left_out_but_accounted_for():
+    c = Construction()
+    a, b = c.add_point(0.6, 0.2), c.add_point(-0.4, 0.5)
+    d = c.add_point(0.1, -0.6)
+    meet = c.add_meet(c.add_line(a, b), c.add_line(a, d))
+    circle = c.add_circle(meet, d)
+    d.move_to(*b.xy)  # the lines fall together; the meet, then the circle, go
+    assert circle.axis_radius() is None
+    text = gclc.to_gclc(c)
+    assert f"circle {circle.label} is undetermined" in text
+
+
+def test_gclc_draws_the_circle_the_model_says():
+    """Compile a folding circle and check the picture lies on the true curve."""
+    if find_gclc() is None:
+        print("      (no gclc on this machine - skipped)", end="")
+        return
+    sheet = gclc.Sheet()
+    for projection in (geo.ORTHOGONAL, geo.STEREOGRAPHIC):
+        for centre, through in [((0.15, 0.1), (0.5, 0.2)),      # snug inside
+                                ((0.8, 0.1), (0.25, 0.0)),     # out through the rim
+                                ((0.8, 0.0), (1e-5, 0.0)),     # folded conic huge
+                                ((0.75, 0.0), (2e-6, 0.0)),    # huger still
+                                ((1.0, 0.0), (1e-5, 0.7))]:    # radius a hair under pi/2
+            c = Construction()
+            circle = c.add_circle(c.add_point(*centre), c.add_point(*through))
+            with tempfile.TemporaryDirectory() as folder:
+                svg = compile_with_gclc(gclc.to_gclc(c, projection=projection), folder)
+            pieces = drawn_pieces(svg, circle.color, sheet)
+            assert len(pieces) > 10, "the circle should come out as a smooth curve"
+            drawn = ink(pieces)
+            truth = np.vstack([projection.project(path) for path in
+                               geo.circle_vector_paths(*circle.axis_radius(), 2000)])
+            stray = max(min(np.linalg.norm(truth - xy, axis=1)) for xy in drawn)
+            gap = max(min(np.linalg.norm(drawn - point, axis=1)) for point in truth)
+            assert stray < 0.01, f"{projection.name} drew something off the circle"
+            assert gap < 0.02, f"{projection.name} misses part of the circle ({gap:.4f})"
+
+
+def test_a_nearly_degenerate_conic_is_never_named():
+    """A stereographic circle whose section almost passes through the south
+    pole would need a conic thousands of disk radii across; arc angles are
+    written with four decimals of a degree, which on such a conic scatters
+    points across the page or rounds the whole sweep away.  Past FAR the
+    exporter must fall back to the sampled curve instead."""
+    for through in ((1e-5, 0.0), (2e-6, 0.0), (0.0, 0.0)):
+        c = Construction()
+        c.add_circle(c.add_point(0.8, 0.0), c.add_point(*through))
+        text = gclc.to_gclc(c, projection=geo.STEREOGRAPHIC)
+        for words in statements(text):
+            if words[0] == "ang_point":
+                assert all(abs(float(w)) <= gclc.FAR + 1 for w in words[2:4]), \
+                    f"an outsized conic point was written: {' '.join(words)}"
+        # the folded piece is still there - as sampled segments, not dropped
+        drawn = [w[0] for w in statements(text)]
+        assert "drawsegment" in drawn, "the near-degenerate piece is sampled"
+
+
+def test_circles_advance_the_auto_palette():
+    c = Construction()
+    points = [c.add_point(x, 0.05) for x in (0.55, 0.15, -0.35)]
+    first = c.add_circle(points[0], points[1])
+    second = c.add_circle(points[1], points[2])
+    line = c.add_line(points[0], points[2])
+    assert first.color != second.color, "two circles are told apart by colour"
+    assert second.color != line.color, "and the line continues the same cycle"
+
+
+def test_bisectors_come_across_as_two_more_curves():
+    c = Construction()
+    a, b = c.add_point(0.3, 0.1), c.add_point(-0.3, 0.2)
+    d, e = c.add_point(0.1, -0.35), c.add_point(-0.1, 0.4)
+    made = c.add_bisectors(c.add_line(a, b), c.add_line(d, e))
+    for projection in (geo.ORTHOGONAL, geo.STEREOGRAPHIC):
+        text = gclc.to_gclc(c, projection=projection)
+        assert text.count("bisector") >= 2, "each named in the comments"
+        arcs = [w for w in statements(text) if w[0].startswith("drawellipsearc")]
+        assert len(arcs) >= 4, "four whole lines, each a real arc"
+        for bisector in made:
+            assert bisector.label in text
+
+
+def test_a_midpoint_travels_with_its_story():
+    c = Construction()
+    m = c.add_midpoint(c.add_point(0.3, 0.1), c.add_point(-0.25, 0.35))
+    text = gclc.to_gclc(c)
+    assert f"{m.label} is the midpoint of AB" in text
+    assert any(w[0] == "ang_point" and w[1] == m.label for w in statements(text))
 
 
 if __name__ == "__main__":

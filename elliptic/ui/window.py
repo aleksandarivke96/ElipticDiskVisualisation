@@ -6,10 +6,12 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                                QMainWindow, QPushButton, QScrollArea, QSizePolicy,
-                               QSplitter, QVBoxLayout, QWidget)
+                               QSlider, QSplitter, QVBoxLayout, QWidget)
 
 from ..model import PALETTE
 from ..viewer import ACTIONS, DEFAULT_EXPORT, TOGGLES, TOOLS
+
+ARROW_KEYS = {Qt.Key.Key_Left: "left", Qt.Key.Key_Right: "right"}
 from .disk import DiskCanvas
 from .sphere import SphereCanvas
 
@@ -47,6 +49,8 @@ class MainWindow(QMainWindow):
         self.disk = DiskCanvas(viewer)
         self.sphere = SphereCanvas(viewer)
         self.buttons: dict[str, QPushButton] = {}
+        self.rotate_slider: QSlider | None = None
+        self.rotate_caption: QLabel | None = None
 
         central = QWidget()
         layout = QHBoxLayout(central)
@@ -106,6 +110,8 @@ class MainWindow(QMainWindow):
         for key, text, shortcut in TOGGLES:
             self._button(column, f"flag:{key}", f"{text}   [{shortcut}]", True,
                          lambda k=key: self.viewer.toggle(k))
+        self._heading(column, "ROTATE")
+        self._slider(column)
         self._heading(column, "COLOUR")
         column.addWidget(self._swatches())
         self._heading(column, "EDIT")
@@ -138,6 +144,21 @@ class MainWindow(QMainWindow):
         column.addWidget(button)
         self.buttons[key] = button
 
+    def _slider(self, column) -> None:
+        """The Rotate slider: a caption naming the pivot and the live angle."""
+        caption = QLabel()
+        caption.setStyleSheet(f"color: {COL_INK}; font-size: 10px;")
+        caption.setContentsMargins(2, 2, 0, 0)
+        column.addWidget(caption)
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(-180, 180)
+        slider.setValue(0)
+        slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        slider.valueChanged.connect(lambda v: self.viewer.rotate(float(v)))
+        column.addWidget(slider)
+        self.rotate_slider = slider
+        self.rotate_caption = caption
+
     def _swatches(self) -> QWidget:
         holder = QWidget()
         grid = QGridLayout(holder)
@@ -167,6 +188,12 @@ class MainWindow(QMainWindow):
                 f"border: {'2px solid ' + COL_INK if chosen else '1px solid ' + COL_EDGE};"
                 f"border-radius: 3px; font-size: 8px; color: {COL_MUTED};")
 
+        self.rotate_slider.blockSignals(True)  # syncing the display, not rotating
+        self.rotate_slider.setValue(round(viewer.turned))
+        self.rotate_slider.blockSignals(False)
+        self.rotate_caption.setText(
+            f"{viewer.turned:+.0f}°  {viewer.pivot_text()}   [← →]")
+
         self.sphere.setVisible(bool(viewer.flags["sphere"]))
         self.status.setText(viewer.status_text())
         self.prompt.follow()
@@ -178,6 +205,9 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt's name
         if event.key() == Qt.Key.Key_Escape:
             self.viewer.key("escape")
+            return
+        if event.key() in ARROW_KEYS:
+            self.viewer.key(ARROW_KEYS[event.key()])
             return
         text = event.text()
         if text and not text.isspace():

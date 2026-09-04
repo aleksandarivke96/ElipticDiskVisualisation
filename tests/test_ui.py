@@ -184,7 +184,8 @@ def test_a_click_on_the_canvas_lands_where_it_looks():
     px, py = canvas.to_px((0.35, -0.42))[0]
     canvas.mousePressEvent(mouse(QEvent.Type.MouseButtonPress, px, py))
     canvas.mouseReleaseEvent(mouse(QEvent.Type.MouseButtonRelease, px, py))
-    assert np.allclose(v.construction.points[0].xy, [0.35, -0.42], atol=1e-9)
+    point = v.construction.points[0]
+    assert np.allclose(v.screen(point.vector), [0.35, -0.42], atol=1e-9)
 
 
 def test_painting_teaches_the_viewer_how_big_a_pixel_is():
@@ -278,10 +279,11 @@ def test_the_window_builds_and_mirrors_the_viewer():
 def test_the_palette_buttons_drive_the_tools():
     v = EllipticDiskViewer()
     window = MainWindow(v)
+    assert v.projection is geo.STEREOGRAPHIC
     window.buttons["meet"].click()
     assert v.tool == "meet"
     window.buttons["flag:conformal"].click()
-    assert v.projection is geo.STEREOGRAPHIC
+    assert v.projection is geo.ORTHOGONAL
     window.buttons["color:#1a9e6a"].click()
     assert v.color == "#1a9e6a"
     window.buttons["clear"].click()
@@ -307,7 +309,7 @@ def test_keys_reach_the_viewer_through_the_window():
     window.keyPressEvent(typed("5"))
     assert v.tool == "triangle"
     window.keyPressEvent(typed("o"))
-    assert v.flags["conformal"] is True
+    assert v.flags["conformal"] is False
     window.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape,
                                    Qt.KeyboardModifier.NoModifier, "\x1b"))
     assert "cancelled" in v.message
@@ -381,6 +383,49 @@ def test_saving_from_the_viewer_needs_no_window():
     with tempfile.TemporaryDirectory() as folder:
         path = v.save(os.path.join(folder, "shot.png"), 900, 500)
         assert os.path.exists(path) and image_at(path).width() == 900
+
+
+def test_the_slider_turns_the_construction_about_the_pivot():
+    v = EllipticDiskViewer()
+    v.set_tool("point")
+    v.press(0.5, 0.0)
+    v.release()
+    v.press(-0.2, 0.3)
+    v.release()
+    window = MainWindow(v)
+    assert "about the centre" in window.rotate_caption.text()
+    before = v.construction.points[1].vector.copy()
+
+    window.rotate_slider.setValue(90)    # about the disk's centre: the z axis
+    expected = geo.rotation(np.array([0.0, 0.0, 1.0]), np.radians(90.0)) @ before
+    assert np.linalg.norm(v.construction.points[1].vector - expected) < 1e-6
+    assert "+90" in window.rotate_caption.text()
+
+    window.rotate_slider.setValue(0)
+    assert np.linalg.norm(v.construction.points[1].vector - before) < 1e-6
+
+    v.set_pivot(v.construction.points[0])   # now about A: A must not move
+    held = v.construction.points[0].vector.copy()
+    assert window.rotate_slider.value() == 0
+    assert "about A" in window.rotate_caption.text()
+    window.rotate_slider.setValue(45)
+    assert np.linalg.norm(v.construction.points[0].vector - held) < 1e-9
+    window.close()
+
+
+def test_arrow_keys_rotate_and_the_slider_follows():
+    v = EllipticDiskViewer()
+    v.set_tool("point")
+    v.press(0.3, 0.2)
+    v.release()
+    window = MainWindow(v)
+    for _ in range(4):
+        window.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Right,
+                                       Qt.KeyboardModifier.NoModifier, ""))
+    assert abs(v.turned - 12.0) < 1e-9
+    assert window.rotate_slider.value() == 12, "the slider shows what the keys did"
+    assert "isometry" in v.message
+    window.close()
 
 
 if __name__ == "__main__":

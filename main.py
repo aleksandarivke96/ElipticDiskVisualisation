@@ -29,16 +29,26 @@ def main() -> None:
                         help="triangles on three point indices each, with their angles")
     parser.add_argument("--polars", nargs="+", type=int, metavar="I",
                         help="the polar line of each of those points")
+    parser.add_argument("--bisects", nargs="+", type=int, metavar="I J",
+                        help="both angle bisectors of two lines, by line index")
+    parser.add_argument("--midpoints", nargs="+", type=int, metavar="I J",
+                        help="the midpoint of each pair of points, by point index")
     parser.add_argument("--meets", nargs="+", type=int, metavar="I J",
                         help="name the point where two lines cross, by line index")
+    parser.add_argument("--circles", nargs="+", type=int, metavar="C T",
+                        help="circles by point index: the centre, a point on it, ...")
     parser.add_argument("--save", metavar="PATH",
                         help="render to an image file instead of opening a window")
     parser.add_argument("--gclc", metavar="PATH",
                         help="write the construction as a GCLC file and exit")
     parser.add_argument("--plain", action="store_true",
                         help="with --gclc: black ink only, construction lines dashed")
-    parser.add_argument("--conformal", action="store_true",
-                        help="draw from the south pole: lines become circular arcs")
+    projection = parser.add_mutually_exclusive_group()
+    projection.add_argument("--conformal", dest="conformal", action="store_true",
+                            default=True,
+                            help="draw from the south pole (the default)")
+    projection.add_argument("--orthogonal", dest="conformal", action="store_false",
+                            help="draw by dropping the hemisphere straight down")
     parser.add_argument("--no-sphere", dest="sphere", action="store_false",
                         help="leave out the 3-D pane showing the sphere itself")
     args = parser.parse_args()
@@ -79,7 +89,11 @@ def build(viewer: EllipticDiskViewer, args: argparse.Namespace) -> None:
     coords = args.points or []
     if len(coords) % 2:
         raise SystemExit("--points needs an even number of values (x y x y ...)")
-    points = [construction.add_point(x, y)
+    # Command-line coordinates name positions in the view being rendered, just
+    # like mouse clicks do.  In particular, conformal coordinates must first be
+    # lifted through the stereographic projection rather than being mistaken
+    # for orthogonal model coordinates.
+    points = [construction.place_point(viewer.lift(x, y))
               for x, y in zip(coords[::2], coords[1::2])]
 
     def point(i):
@@ -101,8 +115,14 @@ def build(viewer: EllipticDiskViewer, args: argparse.Namespace) -> None:
         construction.add_perpendicular(point(i), line(j))
     for (i,) in groups(args.polars, 1, "polars"):
         construction.add_polar(point(i))
+    for i, j in groups(args.bisects, 2, "bisects"):
+        construction.add_bisectors(line(i), line(j))
+    for i, j in groups(args.midpoints, 2, "midpoints"):
+        construction.add_midpoint(point(i), point(j))
     for i, j in groups(args.meets, 2, "meets"):
         construction.add_meet(line(i), line(j))
+    for i, j in groups(args.circles, 2, "circles"):
+        construction.add_circle(point(i), point(j))
 
     if points:
         viewer.changed()

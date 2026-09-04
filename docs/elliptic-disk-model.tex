@@ -784,6 +784,15 @@ $\nvec=\aaa$: the circle of radius $\pi/2$ about $[\aaa]$ is the polar of
 $[\aaa]$, as it must be. That both propositions are special cases of one formula
 is why a single ``draw a conic'' routine serves lines and circles alike.
 
+Like a segment, a circle need not stay in the upper hemisphere: when the
+distance of the centre from the middle of the disk plus the radius exceeds
+$\pi/2$, the part below the equator folds up by \eqref{eq:upper} and re-enters
+the disk on the far side. The height along the circle is
+$z(t)=\cos r\,a_3+\sin r\,\sqrt{1-a_3^2}\,\cos(t-\varphi)$, so the cut is at
+$t=\varphi\pm\arccos\bigl(-\cot r\;a_3/\sqrt{1-a_3^2}\bigr)$, computed exactly;
+the folded piece is the same arc with $\aaa,\ee_1,\ee_2$ all negated, and its
+image lies on the conic of these propositions with $\aaa$ replaced by $-\aaa$.
+
 %======================================================================
 \section{The image of every object, side by side}
 
@@ -891,6 +900,7 @@ polar / pole & \code{polar\_normal}, \code{pole\_vector} \\
 \eqref{eq:girard} & \code{triangle\_area} \\
 Prop.~\ref{prop:circle-ortho} (the SVD) & \code{small\_circle\_ellipse} \\
 \eqref{eq:circle-stereo} & \code{Stereographic.point\_conic} \\
+circle, cut at $z=0$ and folded & \code{circle\_arcs}, \code{circle\_vector\_paths} \\
 angle / right-angle marks & \code{angle\_arc}, \code{right\_angle\_marker} \\
 \bottomrule
 \end{tabular}

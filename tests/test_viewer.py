@@ -7,6 +7,8 @@ window does with the result is `tests.test_ui`'s problem.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 
 from elliptic import EllipticDiskViewer
@@ -15,7 +17,12 @@ from elliptic import scene as sc
 
 
 def viewer_with(tool="point"):
+    """The older tool checks use the orthogonal chart's raw model coordinates.
+
+    Application startup is tested separately in the reference-circle check.
+    """
     v = EllipticDiskViewer()
+    v.flags["conformal"] = False
     v.set_tool(tool)
     return v
 
@@ -732,6 +739,339 @@ def test_a_full_session_builds_a_scene():
         assert curve.points.ndim == 2 and curve.points.shape[1] == 3
         assert np.allclose(np.linalg.norm(curve.points, axis=1), 1.0, atol=1e-9), \
             "every drawn curve lives on the unit sphere"
+
+
+# ---------------------------------------------------------------- the circle tool
+
+
+def test_the_default_view_matches_the_two_arc_reference_circle():
+    """The textbook p/q placement is two circular clines, not one ellipse."""
+    v = EllipticDiskViewer(samples=1024)
+    assert v.projection is geo.STEREOGRAPHIC
+    v.set_tool("circle")
+    click(v, 0.85, 0.0)
+    click(v, 0.50, 0.30)
+
+    circle = v.construction.circles[0]
+    assert np.allclose(v.screen(circle.centre.vector), [0.85, 0.0])
+    assert np.allclose(v.screen(circle.through.vector), [0.50, 0.30])
+    paths = v.circle_paths(circle)
+    assert len(paths) == 2, "the far part re-enters at the opposite rim"
+
+    arcs = geo.circle_arcs(*circle.axis_radius())
+    carriers = [geo.STEREOGRAPHIC.point_conic(axis, circle.radius())
+                for axis, *_ in arcs]
+    centres = [shape[0] for shape in carriers]
+    radii = [np.linalg.norm(shape[1]) for shape in carriers]
+    assert np.allclose(centres, [[1.01019956, 0.0], [-1.50731159, 0.0]], atol=1e-7)
+    assert np.allclose(radii, [0.59186450, 0.88311682], atol=1e-7)
+    assert np.allclose(paths[0][[0, -1]],
+                       [[0.82666813, 0.56268979], [0.82666813, -0.56268979]],
+                       atol=1e-7)
+    assert np.allclose(paths[1][[0, -1]],
+                       [[-0.82666813, 0.56268979], [-0.82666813, -0.56268979]],
+                       atol=1e-7)
+
+
+def test_command_line_points_use_the_selected_view_coordinates():
+    from main import build
+
+    args = SimpleNamespace(points=[0.85, 0.0, 0.50, 0.30],
+                           lines=None, segments=None, triangles=None, perps=None,
+                           polars=None, bisects=None, midpoints=None,
+                           meets=None, circles=[0, 1])
+    for conformal in (True, False):
+        v = EllipticDiskViewer()
+        v.flags["conformal"] = conformal
+        build(v, args)
+        shown = [v.screen(point.vector) for point in v.construction.points]
+        assert np.allclose(shown, [[0.85, 0.0], [0.50, 0.30]])
+    assert len(v.construction.circles) == 1
+
+
+def test_circle_tool_joins_two_clicks():
+    v = viewer_with("circle")
+    click(v, 0.1, 0.1)
+    assert v.pending is not None and not v.construction.circles
+    click(v, 0.5, 0.2)
+    assert v.pending is None
+    circle = v.construction.circles[0]
+    assert len(v.construction.points) == 2
+    assert circle.centre.label == "A" and circle.through.label == "B"
+    assert "radius" in v.message
+
+
+def test_circle_tool_snaps_onto_existing_points():
+    v = viewer_with("point")
+    click(v, 0.2, 0.3)
+    click(v, -0.4, 0.1)
+    v.set_tool("circle")
+    click(v, 0.202, 0.298)   # within the pick radius of A
+    click(v, -0.398, 0.102)  # and of B
+    assert len(v.construction.points) == 2, "no new points were made"
+    circle = v.construction.circles[0]
+    assert circle.centre is v.construction.points[0]
+    assert circle.through is v.construction.points[1]
+
+
+def test_circle_tool_refuses_the_same_point_twice():
+    v = viewer_with("circle")
+    click(v, 0.2, 0.3)
+    click(v, 0.2, 0.3)  # snaps onto the held point: no circle to draw
+    assert not v.construction.circles and v.pending is None
+    assert "same elliptic point" in v.message
+
+
+def test_the_key_0_arms_the_circle_tool():
+    v = viewer_with("point")
+    key(v, "0")
+    assert v.tool == "circle"
+
+
+def test_a_circle_reaches_the_scene_and_both_projections():
+    v = viewer_with("circle")
+    click(v, 0.15, 0.05)
+    click(v, 0.45, 0.05)
+    circle = v.construction.circles[0]
+    layer3 = [c for c in v.scene().curves if c.layer == 3]
+    assert any(len(c.points) > 50 for c in layer3), "the circle is a drawn curve"
+    for conformal in (False, True):
+        v.flags["conformal"] = conformal
+        for path in v.circle_paths(circle):
+            assert np.all(np.linalg.norm(path, axis=1) < 1 + 1e-9), "in the disk"
+
+
+def test_a_circle_through_the_rim_draws_as_two_pieces():
+    v = viewer_with("circle")
+    click(v, 0.85, 0.0)
+    click(v, 0.35, 0.0)
+    circle = v.construction.circles[0]
+    assert len(v.circle_paths(circle)) == 2
+    pieces = [c for c in v.scene().curves if c.layer == 3 and len(c.points) > 50]
+    assert len(pieces) == 2, "the fold shows up in the scene too"
+
+
+def test_delete_tool_removes_a_circle_but_not_its_points():
+    v = viewer_with("circle")
+    click(v, 0.1, 0.1)
+    click(v, 0.5, 0.1)
+    v.set_tool("delete")
+    circle = v.construction.circles[0]
+    spots = v.circle_paths(circle)[0]  # on the curve, far from either point
+    others = np.array([p.xy for p in v.construction.points])
+    away = spots[np.argmax(np.linalg.norm(spots[:, None] - others, axis=2).min(axis=1))]
+    click(v, float(away[0]), float(away[1]))
+    assert not v.construction.circles
+    assert len(v.construction.points) == 2, "the points survive their circle"
+
+
+def test_deleting_the_centre_takes_the_circle_with_it():
+    v = viewer_with("circle")
+    click(v, 0.1, 0.1)
+    click(v, 0.5, 0.1)
+    v.set_tool("delete")
+    click(v, 0.1, 0.1)
+    assert not v.construction.circles and len(v.construction.points) == 1
+
+
+def test_dragging_the_centre_carries_the_circle():
+    v = viewer_with("circle")
+    click(v, 0.1, 0.1)
+    click(v, 0.4, 0.1)
+    radius = v.construction.circles[0].radius()
+    v.set_tool("move")
+    press(v, 0.1, 0.1)
+    drag(v, -0.2, 0.25)
+    release(v)
+    circle = v.construction.circles[0]
+    assert np.allclose(circle.centre.xy, [-0.2, 0.25])
+    assert abs(circle.radius() - radius) > 1e-3, "the through point stayed put"
+    assert abs(circle.radius() - geo.distance(circle.centre.vector,
+                                              circle.through.vector)) < 1e-12
+
+
+def test_a_circle_through_a_pole_at_half_pi_says_it_is_the_polar():
+    v = viewer_with("line")
+    click(v, 0.3, 0.0)
+    click(v, 0.0, 0.3)
+    line = v.construction.lines[0]
+    v.set_tool("dual")
+    middle = v.paths(line)[0][256]  # on the curve, away from either point
+    click(v, float(middle[0]), float(middle[1]))  # a line clicked gives its pole
+    pole = v.construction.points[-1]
+    assert not pole.is_free
+    v.set_tool("circle")
+    click(v, *map(float, v.screen(pole.vector)))       # centre: the pole
+    click(v, 0.3, 0.0)                                  # through a point of the line
+    assert "polar" in v.message, "radius pi/2 is called out for what it is"
+
+
+def test_undo_takes_the_circle_back():
+    v = viewer_with("circle")
+    click(v, 0.1, 0.1)
+    click(v, 0.5, 0.1)
+    v.action("undo")
+    assert not v.construction.circles
+    assert len(v.construction.points) == 2, "the clicked points are their own actions"
+
+
+def test_the_status_line_counts_circles():
+    v = viewer_with("circle")
+    click(v, 0.1, 0.1)
+    click(v, 0.5, 0.1)
+    assert "1 circles" in v.status_text()
+
+
+# ---------------------------------------------------------------- rotation
+
+def rotating_rig():
+    """A triangle, a pole of one side, and the rig's numbers written down."""
+    v = EllipticDiskViewer()
+    v.set_tool("triangle")
+    for x, y in [(0.05, 0.08), (0.3, -0.05), (-0.15, 0.25)]:
+        v.press(x, y)
+        v.release()
+    v.set_tool("dual")
+    side = v.construction.lines[0]
+    path = v.paths(side)[0]
+    v.press(*path[len(path) // 2])  # on the line, away from its ends: its pole
+    v.release()
+    c = v.construction
+    assert any(not p.is_free for p in c.points), "the rig owns a derived point"
+    return v, c, {
+        "vectors": [p.vector.copy() for p in c.points],
+        "area": c.triangles[0].area(),
+        "lengths": [line.length() for line in c.lines if line.is_segment],
+        "history": len(c._created),
+    }
+
+
+def same_elliptic_point(a, b) -> bool:
+    return abs(abs(float(np.dot(a, b))) - 1.0) < 1e-9
+
+
+def test_rotating_is_an_isometry_about_any_pivot():
+    """The whole figure turns; no distance, angle or area budges."""
+    v, c, before = rotating_rig()
+    v.rotate(37.0)                       # about the centre of the disk
+    v.set_pivot(c.points[1])
+    v.rotate(-64.0)                      # then about a vertex
+    after = [p.vector for p in c.points]
+    for i in range(len(after)):
+        for j in range(i):
+            assert abs(geo.distance(after[i], after[j])
+                       - geo.distance(before["vectors"][i], before["vectors"][j])) < 1e-9
+    assert abs(c.triangles[0].area() - before["area"]) < 1e-9
+    for line, length in zip([l for l in c.lines if l.is_segment], before["lengths"]):
+        assert abs(line.length() - length) < 1e-9
+    assert "isometry" in v.message and "about B" in v.message
+
+
+def test_the_pivot_tool_picks_the_point_and_it_stays_put():
+    v, c, _ = rotating_rig()
+    a = c.points[0]
+    v.set_tool("pivot")
+    v.press(*v.screen(a.vector))         # click on A, as drawn right now
+    v.release()
+    assert v.pivot is a and v.turned == 0.0
+    held = a.vector.copy()
+    other = c.points[1].vector.copy()
+    v.rotate(58.0)
+    assert same_elliptic_point(a.vector, held), "the pivot is the fixed point"
+    assert not same_elliptic_point(c.points[1].vector, other), "the rest turned"
+    expected = geo.rotation(held, np.radians(58.0)) @ other
+    assert same_elliptic_point(c.points[1].vector, expected)
+
+
+def test_the_pivot_tool_on_empty_space_makes_the_point():
+    v = EllipticDiskViewer()
+    v.set_tool("pivot")
+    v.press(0.4, -0.2)
+    v.release()
+    assert v.pivot is v.construction.points[0]
+    assert "turns about A" in v.message
+
+
+def test_a_deleted_pivot_falls_back_to_the_centre():
+    v, c, _ = rotating_rig()
+    v.set_pivot(c.points[0])
+    c.delete(c.points[0])
+    assert v.pivot_text() == "about the centre"
+    assert v.live_pivot() is None
+    v.rotate(20.0)                       # still turns, now about the disk axis
+    assert "about the centre" in v.message
+
+
+def test_the_slider_coming_home_puts_everything_back():
+    v, c, before = rotating_rig()
+    v.set_pivot(c.points[2])
+    v.rotate(141.0)   # far enough to push a vertex out through the rim
+    v.rotate(0.0)
+    for point, vector in zip(c.points, before["vectors"]):
+        assert same_elliptic_point(point.vector, vector), "back where it began"
+
+
+def test_choosing_a_pivot_restarts_the_slider():
+    v, c, _ = rotating_rig()
+    v.rotate(90.0)
+    v.set_pivot(c.points[0])
+    assert v.turned == 0.0, "a fresh pivot, a fresh zero - nothing snaps back"
+
+
+def test_rotation_wraps_at_half_a_turn_and_spares_the_history():
+    v, c, before = rotating_rig()
+    v.rotate(170.0)
+    for _ in range(10):
+        v.key("right")        # 3 degrees each: through +180 and out the far side
+    assert abs(v.turned - (-160.0)) < 1e-9
+    assert len(c._created) == before["history"], "rotating made nothing to undo"
+    v.key("left")
+    assert abs(v.turned - (-163.0)) < 1e-9
+
+
+def test_the_pivot_wears_a_ring_in_the_scene():
+    v, c, _ = rotating_rig()
+    rings = lambda: sum(1 for m in v.scene().marks
+                        if m.shape == "ring" and m.size == 15.0)
+    assert rings() == 0
+    v.set_pivot(c.points[0])
+    assert rings() == 1
+
+
+def test_the_bisect_tool_takes_two_lines_and_makes_the_pair():
+    v = EllipticDiskViewer()
+    v.set_tool("line")
+    for x, y in [(0.3, 0.1), (-0.3, 0.2), (0.1, -0.35), (-0.1, 0.4)]:
+        v.press(x, y)
+        v.release()
+    v.set_tool("bisect")
+    v.press(0.7, 0.7)  # empty space: not a line
+    assert "click on a line" in v.message
+    for line in v.construction.lines[:2]:
+        path = v.paths(line)[0]
+        v.press(*path[len(path) // 2])
+        v.release()
+    made = [line for line in v.construction.lines if line.is_bisector]
+    assert len(made) == 2
+    assert "perpendicular to each other" in v.message
+    assert "equal angles" in v.describe(made[0])
+    assert v.paths(made[0]), "drawn as a whole line"
+
+
+def test_the_midpoint_tool_takes_two_points():
+    v = EllipticDiskViewer()
+    v.set_tool("midpoint")
+    v.press(0.3, 0.1)
+    v.release()
+    assert "now pick the second point" in v.message
+    v.press(-0.25, 0.35)
+    v.release()
+    made = [p for p in v.construction.points if not p.is_free]
+    assert len(made) == 1 and made[0].kind == "midpoint"
+    assert "midpoint of" in v.describe(made[0])
+    ends = [p for p in v.construction.points if p.is_free]
+    assert abs(geo.distance(made[0].vector, ends[0].vector)
+               - geo.distance(made[0].vector, ends[1].vector)) < 1e-9
 
 
 if __name__ == "__main__":

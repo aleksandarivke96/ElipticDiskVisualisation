@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import geometry as geo
-from .model import Construction, Line, Point, Triangle
+from .model import Circle, Construction, Line, Point, Triangle
 
 PLAIN_INK = "#111111"
 PLAIN_FAINT = "#8a8f98"
@@ -97,23 +97,40 @@ def line_curves(line: Line, samples: int = 512) -> list[np.ndarray]:
     return geo.segment_vector_paths(*ends, samples)
 
 
-def build(construction: Construction, flags: dict, picked=(), samples: int = 512) -> Scene:
+def circle_curves(circle: Circle, samples: int = 256) -> list[np.ndarray]:
+    """The drawn pieces of a circle, on the sphere, as one or two `(N, 3)` arrays.
+
+    One closed curve while the circle stays above the equator; two arcs when it
+    dips below, the submerged part folding up and re-entering on the far side of
+    the disk - the identification at work, exactly as for a long segment.
+    """
+    axis_radius = circle.axis_radius()
+    if axis_radius is None:
+        return []
+    return geo.circle_vector_paths(*axis_radius, samples)
+
+
+def build(construction: Construction, flags: dict, picked=(), samples: int = 512,
+          pivot=None) -> Scene:
     """Everything the current construction wants drawn, in sphere coordinates."""
-    return _Builder(construction, flags, list(picked), samples).run()
+    return _Builder(construction, flags, list(picked), samples, pivot).run()
 
 
 class _Builder:
-    def __init__(self, construction, flags, picked, samples):
+    def __init__(self, construction, flags, picked, samples, pivot=None):
         self.construction = construction
         self.flags = flags
         self.picked = picked
         self.samples = samples
+        self.pivot = pivot
         self.plain = bool(flags.get("plain"))
         self.scene = Scene()
 
     def run(self) -> Scene:
         for line in self.construction.lines:
             self.line(line)
+        for circle in self.construction.circles:
+            self.circle(circle)
         for triangle in self.construction.triangles:
             self.triangle(triangle)
         if self.flags.get("meets"):
@@ -194,6 +211,22 @@ class _Builder:
         if marker is not None:
             self.add(Curve(marker, ink, width=1.4, alpha=0.9, layer=4))
 
+    # ------------------------------------------------------------------ circles
+
+    def circle(self, circle: Circle) -> None:
+        paths = circle_curves(circle, self.samples)
+        if not paths:
+            return
+        ink = self.ink(circle.color)
+        if self.held(circle):
+            for path in paths:
+                self.add(Curve(path, ink, width=9.0, alpha=0.25, layer=2))
+        for path in paths:
+            self.add(Curve(path, ink, width=1.3 if self.plain else 2.0, layer=3))
+        if self.flags.get("labels"):
+            self.add(Text(paths[0][0], circle.label, ink, size=10.0, italic=True,
+                          offset=(0.035, 0.025), centred=False))
+
     # ------------------------------------------------------------------ triangles
 
     def triangle(self, triangle: Triangle) -> None:
@@ -238,6 +271,8 @@ class _Builder:
                           width=1.4 if self.plain else 2.0, layer=6))
         if self.held(point):
             self.add(Mark(vector, "ring", ink, size=21.0, width=2.0, layer=6))
+        if point is self.pivot:  # the Rotate slider turns about this one
+            self.add(Mark(vector, "ring", ink, size=15.0, width=1.5, layer=6))
         if self.flags.get("labels"):
             self.add(Text(vector, point.label, ink, size=11.0,
                           italic=self.plain, bold=not self.plain,
