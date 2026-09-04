@@ -5,9 +5,33 @@ plane: build constructions out of as many points, lines, segments, triangles
 and circles as you like and watch them behave the way elliptic geometry says
 they must.
 
+## How to run it
+
+You need Python 3.10 or newer and two packages, `numpy` and `PySide6`.
+
+**Linux** — in a terminal, from this folder:
+
 ```bash
+pip3 install --user numpy PySide6   # first time only
 python3 main.py
 ```
+
+(If your distribution refuses the install with *externally-managed-environment*,
+use a virtual environment: `python3 -m venv .venv && . .venv/bin/activate &&
+pip install numpy PySide6`, then `python main.py`.)
+
+**Windows** — install Python from [python.org](https://www.python.org/downloads/)
+(tick *"Add python.exe to PATH"* in the installer), then in Command Prompt or
+PowerShell, from this folder:
+
+```bat
+pip install numpy PySide6           REM first time only
+python main.py
+```
+
+Either way a window opens with the tool palette on the left, the disk in the
+middle and the 3-D sphere on the right — start clicking in the disk. Everything
+below explains what the tools do and what the geometry means.
 
 ## The palette
 
