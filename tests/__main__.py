@@ -5,8 +5,8 @@ from __future__ import annotations
 import importlib
 import traceback
 
-MODULES = ["tests.test_geometry", "tests.test_model", "tests.test_gclc",
-           "tests.test_viewer", "tests.test_ui"]
+MODULES = ["tests.test_geometry", "tests.test_model", "tests.test_gclc", "tests.test_tikz",
+           "tests.test_tikz_sphere", "tests.test_viewer", "tests.test_ui"]
 
 
 def main() -> int:

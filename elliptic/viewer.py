@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import gclc
+from . import gclc, tikz, tikz_sphere
 from . import geometry as geo
 from . import scene as sc
 from .model import (LINE, PALETTE, SEGMENT, Circle, Construction, Line, Point,
                     Triangle)
+from .sphere import SphereView
 
 PICK_POINT_PX = 13.0
 PICK_LINE_PX = 9.0
@@ -52,7 +53,9 @@ TOGGLES = [
     ("antipodes", "Antipodes", "a"),  # in 3-D: the other half of each pair
 ]
 ACTIONS = [("undo", "Undo", "u"), ("clear", "Clear", "c"),
-           ("gclc", "Save GCLC", "g")]  # shift-G saves the same thing in plain black
+           ("gclc", "Save GCLC", "g"), ("tikz", "Save TikZ", "k"),
+           ("tikz3d", "Save 3D TikZ", "v")]
+# Shift-G, Shift-K and Shift-V save the same formats in plain black.
 # The Rotate slider turns the whole construction about a chosen point - a live
 # isometry of the plane.  A rotation about a point of the elliptic plane IS the
 # rotation of the sphere about that point's axis, so the pivot can be any point
@@ -60,6 +63,11 @@ ACTIONS = [("undo", "Undo", "u"), ("clear", "Clear", "c"),
 # pivot on the rim rolls the figure out through the rim and in the far side.
 ARROW_STEP = 3.0  # degrees per arrow-key press
 DEFAULT_EXPORT = "construction.gcl"
+DEFAULT_TIKZ_EXPORT = "construction.txt"
+DEFAULT_SPHERE_EXPORT = "sphere.txt"
+EXPORT_FORMATS = {"gclc": ("GCLC", DEFAULT_EXPORT, "G"),
+                  "tikz": ("TikZ", DEFAULT_TIKZ_EXPORT, "K"),
+                  "tikz3d": ("3D TikZ", DEFAULT_SPHERE_EXPORT, "V")}
 
 DEFAULT_FLAGS = {"labels": True, "poles": False, "meets": True, "rim": True,
                  # The textbook disk model is the stereographic picture.  Keep
@@ -78,6 +86,7 @@ class EllipticDiskViewer:
         self.tool = "point"
         self.color: str | None = None  # None = cycle through the palette
         self.flags = dict(DEFAULT_FLAGS)
+        self.sphere_view = SphereView()
         self.picked: list[Point | Line] = []  # objects a half-finished tool holds
         self.pivot: Point | None = None  # what the Rotate slider turns about
         self.turned = 0.0                # its accumulated angle, in degrees
@@ -88,6 +97,7 @@ class EllipticDiskViewer:
         self._dragging: Point | None = None
         self._prompting = False
         self._plain_export = False
+        self._export_format = "gclc"
         self.window = None
 
     # ------------------------------------------------------------------ state
@@ -110,6 +120,18 @@ class EllipticDiskViewer:
     @property
     def plain_export(self) -> bool:
         return self._plain_export
+
+    @property
+    def export_format(self) -> str:
+        return self._export_format
+
+    @property
+    def export_label(self) -> str:
+        return EXPORT_FORMATS[self._export_format][0]
+
+    @property
+    def default_export(self) -> str:
+        return EXPORT_FORMATS[self._export_format][1]
 
     def changed(self) -> None:
         """Tell whoever is drawing that the picture is out of date."""
@@ -209,20 +231,24 @@ class EllipticDiskViewer:
         elif action == "clear":
             self.construction.clear()
             self.message = "cleared"
-        elif action == "gclc":
-            self.begin_prompt(self.flags["plain"])  # save what you can see
+        elif action in EXPORT_FORMATS:
+            self.begin_prompt(self.flags["plain"], action)  # save what you can see
             return
         self.picked.clear()
         self.changed()
 
     # ------------------------------------------------------------------ export
 
-    def begin_prompt(self, plain: bool = False) -> None:
-        """Open the little box that asks where the GCLC file should go."""
+    def begin_prompt(self, plain: bool = False, export_format: str = "gclc") -> None:
+        """Open the little box that asks where the selected export should go."""
+        if export_format not in EXPORT_FORMATS:
+            raise ValueError(f"unknown export format: {export_format}")
         self._prompting = True
         self._plain_export = plain
+        self._export_format = export_format
+        shortcut = EXPORT_FORMATS[export_format][2]
         self.message = ("plain, no colour - file name, then enter (esc cancels)" if plain
-                        else "file name, then enter (esc cancels; G saves plain)")
+                        else f"file name, then enter (esc cancels; {shortcut} saves plain)")
         self.changed()
 
     def cancel_prompt(self) -> None:
@@ -239,17 +265,30 @@ class EllipticDiskViewer:
         self._prompting = False
         written = None
         try:
-            written = gclc.export(self.construction, name, plain=self._plain_export,
-                                  projection=self.projection)
+            if self._export_format == "tikz3d":
+                written = self.save_sphere_tikz(name, plain=self._plain_export)
+            else:
+                exporter = tikz if self._export_format == "tikz" else gclc
+                written = exporter.export(self.construction, name, plain=self._plain_export,
+                                          projection=self.projection)
         except (OSError, ValueError) as problem:
             self.message = f"could not write it: {problem}"
         else:
-            how = "plain GCLC" if self._plain_export else "GCLC"
+            how = f"plain {self.export_label}" if self._plain_export else self.export_label
             counts = (f"{len(self.construction.points)} points, "
                       f"{len(self.construction.lines)} lines")
             self.message = f"wrote {written} for {how} - {counts}"
         self.changed()
         return written
+
+    def save_sphere_tikz(self, path: str, plain: bool | None = None) -> str:
+        """Export the sphere with its current camera and display settings."""
+        view = self.sphere_view
+        plain = self.flags["plain"] if plain is None else plain
+        return tikz_sphere.export(
+            self.construction, path, projection=self.projection,
+            flags={**self.flags, "plain": plain}, plain=plain,
+            azimuth=view.azimuth, elevation=view.elevation, zoom=view.zoom)
 
     # ------------------------------------------------------------------ hit testing
 
@@ -323,9 +362,10 @@ class EllipticDiskViewer:
             if pressed == "escape":
                 self.cancel_prompt()
             return
-        if pressed == "G":  # shift: the same save, in plain black and white
-            self.begin_prompt(plain=True)
-            return
+        for export_format, (_, _, shortcut) in EXPORT_FORMATS.items():
+            if pressed == shortcut:  # shift: the same save, in plain black and white
+                self.begin_prompt(plain=True, export_format=export_format)
+                return
         if pressed in ("left", "right"):
             step = ARROW_STEP if pressed == "right" else -ARROW_STEP
             self.rotate(self.turned + step)

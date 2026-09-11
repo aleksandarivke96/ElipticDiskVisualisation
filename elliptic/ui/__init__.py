@@ -19,7 +19,8 @@ def app():
     existing = QApplication.instance()
     if existing is not None:
         return existing
-    if not any(os.environ.get(name) for name in ("DISPLAY", "WAYLAND_DISPLAY")):
+    if sys.platform.startswith("linux") and not any(
+            os.environ.get(name) for name in ("DISPLAY", "WAYLAND_DISPLAY")):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     return QApplication(sys.argv[:1])
 

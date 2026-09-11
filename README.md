@@ -1,41 +1,200 @@
 # Elliptic geometry — closed disk model
 
 Interactive visualisation of the **closed disk (hemisphere) model** of the elliptic
-plane: build constructions out of as many points, lines, segments, triangles
-and circles as you like and watch them behave the way elliptic geometry says
-they must.
+plane. Build constructions out of points, lines, segments, triangles and circles
+and watch them behave the way elliptic geometry says they must — on a flat disk
+on the left, and on the sphere the disk is a picture of on the right. What you
+build can be exported as a PNG image, a [GCLC](https://poincare.matf.bg.ac.rs/~janicic/gclc/)
+file or TikZ source for LaTeX.
 
-## How to run it
+**Contents**
 
-You need Python 3.10 or newer and two packages, `numpy` and `PySide6`.
+1. [Install and run locally](#1-install-and-run-locally) — Linux, Windows, checking the install, updating, uninstalling
+2. [Using the program](#2-using-the-program) — the palette, the sphere pane, the two projections, the command line
+3. [Exporting](#3-exporting) — TikZ and GCLC
+4. [The geometry](#4-the-geometry) — what every object means
+5. [Project layout](#5-project-layout)
 
-**Linux** — in a terminal, from this folder:
+---
+
+## 1. Install and run locally
+
+The program is a plain Python application. It is not "installed" in the usual
+sense: everything it needs goes into a **virtual environment** (a private
+folder named `.venv`) inside the project folder, nothing is written anywhere
+else on the machine, and deleting the folder removes it completely. The steps
+below are the same on every machine; only the shell commands differ between
+Linux and Windows.
+
+### What you need
+
+| | |
+| --- | --- |
+| **Python** | 3.10 or newer. Developed and tested on 3.13. |
+| **Packages** | `numpy` and `PySide6` (Qt 6) — both listed in [requirements.txt](requirements.txt) and installed in step 3 below. |
+| **Git** | optional, only to clone and later update the repository. A downloaded ZIP works just as well. |
+| **LaTeX** | optional, only to rebuild the PDF in [docs/](docs/) or to typeset the TikZ exports. |
+
+The source lives at <https://github.com/aleksandarivke96/ElipticDiskVisualisation>.
+
+### Linux
+
+1. **Install Python** together with its `venv` module. On Debian and Ubuntu:
+
+   ```bash
+   sudo apt install python3 python3-venv python3-pip
+   ```
+
+   On Fedora: `sudo dnf install python3`. On Arch: `sudo pacman -S python`.
+
+2. **Get the code** and go into the folder:
+
+   ```bash
+   git clone https://github.com/aleksandarivke96/ElipticDiskVisualisation.git
+   cd ElipticDiskVisualisation
+   ```
+
+   Without Git: download the repository as a ZIP from GitHub (*Code → Download
+   ZIP*), unpack it and `cd` into the unpacked folder.
+
+3. **Create the virtual environment** and install the two packages into it:
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+   The prompt gains a `(.venv)` prefix while the environment is active.
+
+4. **Run it:**
+
+   ```bash
+   python main.py
+   ```
+
+   A window opens with the tool palette on the left, the disk in the middle and
+   the 3-D sphere on the right. Start clicking in the disk.
+
+**Every later time:** open a terminal in the folder, `source .venv/bin/activate`,
+`python main.py`. You can also skip the activation and call the environment's
+interpreter directly: `.venv/bin/python main.py`.
+
+**If no window opens.** PySide6 brings its own copy of Qt, but Qt relies on a
+handful of system libraries that a minimal installation may lack. The error
+looks like *"Could not load the Qt platform plugin 'xcb'"*. On Debian/Ubuntu:
 
 ```bash
-pip3 install --user numpy PySide6   # first time only
-python3 main.py
+sudo apt install libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 \
+                 libegl1 libgl1 libfontconfig1 libdbus-1-3
 ```
 
-(If your distribution refuses the install with *externally-managed-environment*,
-use a virtual environment: `python3 -m venv .venv && . .venv/bin/activate &&
-pip install numpy PySide6`, then `python main.py`.)
+On a Wayland desktop, if the window behaves oddly, force the X11 backend with
+`QT_QPA_PLATFORM=xcb python main.py`. If `pip install` complains about an
+*externally-managed-environment*, the virtual environment is not active — run
+the `source` line from step 3 again; nothing here should ever be installed into
+the system Python.
 
-**Windows** — install Python from [python.org](https://www.python.org/downloads/)
-(tick *"Add python.exe to PATH"* in the installer), then in Command Prompt or
-PowerShell, from this folder:
+### Windows
 
-```bat
-pip install numpy PySide6           REM first time only
-python main.py
+1. **Install Python** from [python.org](https://www.python.org/downloads/) and
+   tick **"Add python.exe to PATH"** in the installer. From a terminal,
+   `winget install Python.Python.3.12` does the same. Prefer this over the
+   Microsoft Store build: the Store version lives under a very long path, which
+   can make the PySide6 install fail.
+
+2. **Get the code.** In a terminal:
+
+   ```powershell
+   git clone https://github.com/aleksandarivke96/ElipticDiskVisualisation.git
+   cd ElipticDiskVisualisation
+   ```
+
+   Without Git: download the ZIP from GitHub, unpack it, then open a terminal
+   in that folder (in Explorer, right-click the folder → *Open in Terminal*, or
+   type `powershell` into the address bar).
+
+3. **Create the virtual environment** and install the two packages into it.
+   In **PowerShell**:
+
+   ```powershell
+   py -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   python -m pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+   In **Command Prompt** the activation line is `.venv\Scripts\activate.bat`
+   instead. If PowerShell refuses the activation script with *"running scripts
+   is disabled on this system"*, allow it once for your user account and try again:
+
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+   ```
+
+   The prompt gains a `(.venv)` prefix while the environment is active.
+
+4. **Run it:**
+
+   ```powershell
+   python main.py
+   ```
+
+**Every later time:** open a terminal in the folder, run the activation line,
+`python main.py`. Without activating: `.venv\Scripts\python.exe main.py`.
+
+### Checking the install
+
+With the environment active, from the project folder:
+
+```bash
+python main.py --help     # lists the command-line options
+python -m tests           # runs every check; ends with "258 passed, 0 failed"
 ```
 
-Either way a window opens with the tool palette on the left, the disk in the
-middle and the 3-D sphere on the right — start clicking in the disk. Everything
-below explains what the tools do and what the geometry means.
+The tests need no screen — the window tests run on Qt's offscreen platform —
+so they work over SSH and in CI as well.
 
-## The palette
+### Running without a screen
 
-Pick a tool on the left (or press its number), then click in the disk.
+Give `main.py` something to export and it draws the construction to a file and
+exits instead of opening a window:
+
+```bash
+python main.py --points 0.35 0.45 -0.6 0.2 0.1 -0.7 --lines 0 1 --perps 2 0 --save out.png
+```
+
+On Linux the program switches to Qt's offscreen platform by itself when neither
+`DISPLAY` nor `WAYLAND_DISPLAY` is set, so this also works on a headless server.
+`--gclc`, `--tikz` and `--tikz-3d` export in the same way; see
+[the command line](#the-command-line) for the full set of options.
+
+### Updating, leaving, uninstalling
+
+- **Update** — inside the folder, with the environment active:
+  `git pull` then `pip install --upgrade -r requirements.txt`. (For a ZIP
+  install, unpack the new version over the old one and run the `pip` line.)
+- **Leave the environment** — type `deactivate`, or just close the terminal.
+- **Uninstall** — delete the `.venv` folder, or the whole project folder.
+  Nothing was written anywhere else.
+
+### Building the write-up (optional)
+
+[docs/elliptic-disk-model.pdf](docs/elliptic-disk-model.pdf) is the mathematics
+behind the program — both projections, every object, with proofs — and it is
+already built. To rebuild it after editing the `.tex` source you need a LaTeX
+distribution (TeX Live on Linux, [MiKTeX](https://miktex.org/) or TeX Live on
+Windows). Then `make -C docs` on Linux, or on either system run
+`pdflatex elliptic-disk-model.tex` twice inside the `docs` folder.
+
+---
+
+## 2. Using the program
+
+### The palette
+
+Pick a tool on the left (or press its key), then click in the disk.
 
 | tool | key | what a click does |
 | --- | --- | --- |
@@ -50,6 +209,7 @@ Pick a tool on the left (or press its number), then click in the disk.
 | **Bisect angle** | `n` | click two lines; both bisectors of their angles appear, as one action |
 | **Polar / Pole** | `7` | click a point for its polar line, or a line for its pole |
 | **Move** | `8` | drags a point; everything built on it follows |
+| **Rotate about** | `t` | click the point the **Rotate** slider should turn the figure around |
 | **Delete** | `9` | removes a point (and its lines) or a line on its own |
 
 Line, Segment, Perpendicular, Triangle and Circle snap onto an existing point if you
@@ -65,11 +225,13 @@ downstream of it all follow.
 
 **Show** toggles: `l` labels (and the triangle readouts), `p` poles, `x` meets
 (intersections), `e` rim ends, `o` switches the default **conformal** view to
-the orthogonal one (see below), `b` **plain** — black ink on white, with line
-weight doing the work colour was doing, and the rest of each line dashed. Turn
-it on and the picture is the figure you would put in a paper; **Save GCLC**
-then exports exactly that. And for the right-hand pane: `s` shows or hides the
-**3-D sphere**, `r` its **projector** rays, `a` the **antipodes**.
+the orthogonal one (see [two ways of looking at it](#two-ways-of-looking-at-it)),
+`b` **plain** — black ink on white, with line weight doing the work colour was
+doing, and the rest of each line dashed. Turn it on and the picture is the
+figure you would put in a paper; **Save GCLC** or **Save TikZ** then exports
+that style. And for the right-hand pane: `s` shows or hides the **3-D sphere**,
+`r` its **projector** rays, `a` the **antipodes**.
+
 The **Rotate** slider (`←`/`→` to nudge) turns the whole construction about a
 point of your choosing — a live isometry of the plane, since a rotation about
 an elliptic point *is* the rotation of the sphere about that point's axis.
@@ -83,23 +245,15 @@ a rigid motion of elliptic geometry means. Only free points really move
 (derived points follow), nothing lands in the undo history, choosing a new
 pivot restarts the slider at zero, and dragging it back to zero brings the
 figure back exactly.
+
 **Edit**: `u` undo the last action — a triangle and its three sides go together —
-`c` clear everything, `g` **Save GCLC** (a box opens over the disk: type a file
-name, press enter, `esc` cancels) — `G` saves the same thing plain, in black and
-white. **Colour** swatches set the colour of the *next* object; `auto` cycles the
-palette. Clicks outside the disk snap to the rim.
+`c` clear everything. **Save GCLC** (`g`), **Save TikZ** (`k`) and **Save 3D
+TikZ** (`v`) open a box over the disk: type a file name, press enter, `esc`
+cancels. The capital letters `G`, `K` and `V` save the same thing plain, in
+black and white. **Colour** swatches set the colour of the *next* object;
+`auto` cycles the palette. Clicks outside the disk snap to the rim.
 
-`python3 main.py --points 0.35 0.45 -0.6 0.2 0.1 -0.7 --lines 0 1 --perps 2 0
---save out.png` renders a fixed construction to an image instead of opening a
-window. `--triangles`, `--circles`, `--polars` and `--meets` build the rest;
-this draws a triangle, its three altitudes and the orthocentre they share:
-
-```bash
-python3 main.py --points 0.0 0.35 0.55 -0.3 -0.5 -0.25 \
-                --triangles 0 1 2 --perps 2 0 0 1 1 2 --meets 3 4
-```
-
-## The sphere on the right
+### The sphere on the right
 
 The disk is the upper hemisphere flattened out, and the right-hand pane
 un-flattens it. The same construction is drawn twice over: once on the ball it
@@ -127,8 +281,9 @@ circle and a point is in front exactly when it is on the camera's side of the
 plane through the centre — hidden lines are cut on that boundary rather than
 guessed at, and what goes round the back is drawn faintly through the ball.
 Dragging here only turns the camera; the construction is edited on the disk.
+Start with `--no-sphere` to leave the pane out altogether.
 
-## Two ways of looking at it
+### Two ways of looking at it
 
 The disk is the hemisphere drawn flat, and there is more than one way to draw it
 flat. `o` switches between them; the model, the tools and every measurement are
@@ -148,7 +303,97 @@ disk picture, including circles that may appear as two circular arcs; the
 orthogonal view is useful when the figure is about distance. Use
 `--orthogonal` to select it on the command line.
 
-## Exporting to GCLC
+### The command line
+
+Everything the palette can build, the command line can build too, and then
+either open the window on it or export it and exit. Coordinates name positions
+in the view being rendered, exactly like mouse clicks do.
+
+| option | meaning |
+| --- | --- |
+| `--points X Y X Y …` | start with these points placed; they are numbered 0, 1, 2, … in this order |
+| `--lines I J …` | join points by index into full lines |
+| `--segments I J …` | like `--lines` but draws the shortest path |
+| `--triangles I J K …` | triangles on three point indices each, with their angles |
+| `--perps P L …` | drop a perpendicular from point `P` onto line `L` |
+| `--polars I …` | the polar line of each of those points |
+| `--bisects I J …` | both angle bisectors of two lines, by line index |
+| `--midpoints I J …` | the midpoint of each pair of points |
+| `--meets I J …` | name the point where two lines cross, by line index |
+| `--circles C T …` | a circle about point `C` through point `T` |
+| `--save PATH` | render to an image file and exit |
+| `--gclc PATH` | write a GCLC file and exit |
+| `--tikz PATH` | write the disk as TikZ source and exit |
+| `--tikz-3d PATH` | write the sphere view as TikZ source and exit |
+| `--plain` | with the exports: monochrome, construction lines dashed |
+| `--conformal` / `--orthogonal` | choose the projection (conformal is the default) |
+| `--no-sphere` | leave out the 3-D pane |
+
+Line indices count in creation order: `--lines`, then `--segments`, then the
+three sides of each `--triangles` entry, then `--perps`, then `--polars` — so a
+perpendicular can be dropped onto a triangle's side. This draws a triangle, its
+three altitudes and the orthocentre they share:
+
+```bash
+python main.py --points 0.0 0.35 0.55 -0.3 -0.5 -0.25 \
+               --triangles 0 1 2 --perps 2 0 0 1 1 2 --meets 3 4
+```
+
+(On Windows write it on one line without the backslashes.)
+
+---
+
+## 3. Exporting
+
+### TikZ
+
+**Save TikZ** (`k`, or `--tikz drawing.txt` on the command line) writes the
+2-D disk construction as a TikZ `tikzpicture` in a plain text file. The export
+uses the current conformal or orthogonal view. If the filename has no extension,
+`.txt` is added automatically; the default filename is `construction.txt`.
+
+Use `K` to save in black and white, or turn on **Plain** (`b`) before saving.
+On the command line, add `--plain`:
+
+```bash
+python main.py --points 0.0 0.35 0.55 -0.3 -0.5 -0.25 \
+               --triangles 0 1 2 --tikz drawing.txt --plain
+```
+
+Add `\usepackage{tikz}` to your LaTeX document's preamble, then paste the exported
+text into the document or load the file with `\input{drawing.txt}`:
+
+```latex
+\documentclass{article}
+\usepackage{tikz}
+\begin{document}
+\input{drawing.txt}
+\end{document}
+```
+
+**Save 3D TikZ** (`v`) exports the sphere view to `sphere.txt`. Turn and zoom the
+sphere before saving to choose the camera. The file includes the sphere grid,
+the construction on its surface, its flattened copy in the equatorial disk,
+and the enabled labels, poles, intersections, projector rays and antipodes.
+Rear curves are faded through the sphere. The **Conformal** toggle determines
+how the construction lands on the equatorial disk and how the projector rays run.
+Use `V`, or the **Plain** toggle, for a monochrome figure.
+
+The 3-D export is an editable vector picture of that camera view. Include it
+with `\input{sphere.txt}` using the same `\usepackage{tikz}` preamble above.
+On the command line, `--tikz-3d sphere.txt` uses the default camera; it can be
+combined with the disk export:
+
+```bash
+python main.py --points 0.0 0.35 0.55 -0.3 -0.5 -0.25 \
+               --triangles 0 1 2 --tikz drawing.txt --tikz-3d sphere.txt
+```
+
+Add `--plain` for monochrome output or `--orthogonal` for the orthogonal
+projection. These exports combine freely with `--gclc drawing.gcl` and
+`--save drawing.png`.
+
+### GCLC
 
 **Save GCLC** (`g`, or `--gclc out.gcl` on the command line) writes the current
 construction as a [GCLC](https://poincare.matf.bg.ac.rs/~janicic/gclc/) file —
@@ -187,11 +432,16 @@ at each end — invisible under the point marks, but that is why a segment stops
 a hair short of its point. And `circleprecision <n>` will make arcs smoother if
 you are exporting to LaTeX at a large size.
 
+---
+
+## 4. The geometry
+
 The elliptic plane is the sphere with antipodal points identified. Each class
 `{v, −v}` has a representative on the closed upper hemisphere, and projecting
 that hemisphere straight down gives the closed unit disk — with **opposite
 boundary points being one and the same point**, which is what the dashed rim is
-there to remind you of.
+there to remind you of. The full account, with proofs, is in
+[docs/elliptic-disk-model.pdf](docs/elliptic-disk-model.pdf).
 
 * **Point** — a disk point `(x, y)` lifts to `(x, y, √(1 − x² − y²))`.
 * **Line** — a great circle, i.e. the unit vectors orthogonal to a normal
@@ -275,29 +525,27 @@ name the orthocentre — then drag a vertex and watch the three stay concurrent;
 circle a line's pole through any point of the line and watch the circle hug the
 line itself.
 
-## Layout
+---
+
+## 5. Project layout
 
 | path | contents |
 | --- | --- |
+| [main.py](main.py) | entry point: the window, or the command-line exports |
+| [requirements.txt](requirements.txt) | the two packages the program needs |
 | [elliptic/geometry.py](elliptic/geometry.py) | the maths: lifting, lines, segments, circles, distance, duality, angles and area |
 | [elliptic/model.py](elliptic/model.py) | the construction: what is built on what, and how it comes apart again |
 | [elliptic/scene.py](elliptic/scene.py) | what to draw, in sphere coordinates — both panes consume it |
 | [elliptic/viewer.py](elliptic/viewer.py) | the tools: what a click does, toolkit-free |
-| [elliptic/ui/](elliptic/ui/) | the PySide6 window: the disk pane, the 3-D sphere pane |
+| [elliptic/ui/](elliptic/ui/) | the PySide6 window: the disk pane, the 3-D sphere pane, image rendering |
+| [elliptic/sphere.py](elliptic/sphere.py) | shared sphere camera and visibility geometry |
 | [elliptic/gclc.py](elliptic/gclc.py) | the GCLC exporter |
-| [main.py](main.py) | entry point |
-| [docs/](docs/) | `make -C docs` — the mathematics written out: both projections, every object, with proofs |
-| [tests/](tests/) | `python3 -m tests` — 227 checks over the maths, the model, the export and the tools |
+| [elliptic/tikz.py](elliptic/tikz.py) | the TikZ exporter for the disk |
+| [elliptic/tikz_sphere.py](elliptic/tikz_sphere.py) | the TikZ exporter for the 3-D sphere view |
+| [tests/](tests/) | `python -m tests` — checks over the maths, the model, the exports, the tools and the window |
+| [docs/](docs/) | the mathematics written out, as LaTeX source and the built PDF; `make -C docs` rebuilds it |
 
 Nothing in the construction stores a position or a normal: every object holds
 references to the objects it was built from and re-derives itself on demand.
 That is what makes dragging work, and it is why deleting something takes
 everything downstream of it with it.
-
-## Requirements
-
-numpy and PySide6.
-
-```bash
-pip3 install --user numpy PySide6
-```

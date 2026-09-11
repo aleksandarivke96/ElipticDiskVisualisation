@@ -352,6 +352,99 @@ def test_the_save_box_says_when_it_will_be_plain():
     window.close()
 
 
+def test_the_tikz_button_and_save_box_write_a_text_file():
+    import tempfile
+    from pathlib import Path
+
+    v = EllipticDiskViewer()
+    window = MainWindow(v)
+    window.show()
+    window.buttons["tikz"].click()
+    assert v.prompting and window.prompt.isVisible()
+    assert window.prompt.caption.text() == "save TikZ to"
+    assert window.prompt.field.text() == "construction.txt"
+
+    # Changing formats through the palette also changes an already open box.
+    window.buttons["gclc"].click()
+    assert window.prompt.caption.text() == "save GCLC to"
+    assert window.prompt.field.text() == "construction.gcl"
+    window.buttons["tikz"].click()
+    assert window.prompt.field.text() == "construction.txt"
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "typed"
+        window.prompt.field.setText(str(path))
+        window.prompt.field.returnPressed.emit()
+        assert not v.prompting and not window.prompt.isVisible()
+        assert r"\begin{tikzpicture}" in path.with_suffix(".txt").read_text(
+            encoding="utf-8")
+    window.close()
+
+
+def test_shift_k_and_an_empty_tikz_filename_use_the_right_format():
+    from unittest.mock import patch
+
+    v = EllipticDiskViewer()
+    window = MainWindow(v)
+    window.show()
+    window.keyPressEvent(typed("K"))
+    assert window.prompt.isVisible()
+    assert window.prompt.caption.text() == "save plain TikZ to"
+    window.prompt.field.setText("   ")
+    with patch.object(v, "submit_prompt") as submit:
+        window.prompt.field.returnPressed.emit()
+        submit.assert_called_once_with("construction.txt")
+    v.cancel_prompt()
+    assert not window.prompt.isVisible()
+    window.keyPressEvent(typed("k"))
+    assert window.prompt.caption.text() == "save TikZ to"
+    window.close()
+
+
+def test_sphere_tikz_button_saves_the_camera_after_orbit_and_zoom():
+    import tempfile
+    from pathlib import Path
+    from elliptic import tikz_sphere
+
+    v = a_construction()
+    window = MainWindow(v)
+    window.show()
+    sphere = window.sphere
+    sphere.mousePressEvent(mouse(QEvent.Type.MouseButtonPress, 200, 200))
+    sphere.mouseMoveEvent(mouse(QEvent.Type.MouseMove, 260, 235))
+    sphere.mouseReleaseEvent(mouse(QEvent.Type.MouseButtonRelease, 260, 235))
+    sphere.wheelEvent(wheel(120))
+    position = sphere.azimuth, sphere.elevation, sphere.zoom
+    window.buttons["tikz3d"].click()
+    assert window.prompt.caption.text() == "save 3D TikZ to"
+    assert window.prompt.field.text() == "sphere.txt"
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "turned.txt"
+        window.prompt.field.setText(str(path))
+        window.prompt.field.returnPressed.emit()
+        assert not v.prompting and not window.prompt.isVisible()
+        assert path.read_text(encoding="utf-8") == tikz_sphere.to_tikz(
+            v.construction, projection=v.projection, flags=v.flags,
+            azimuth=position[0], elevation=position[1], zoom=position[2])
+    window.keyPressEvent(typed("V"))
+    assert window.prompt.caption.text() == "save plain 3D TikZ to"
+    v.cancel_prompt()
+    window.close()
+
+
+def test_new_sphere_canvas_preserves_view_but_other_viewers_are_independent():
+    from elliptic.sphere import HOME
+
+    v = EllipticDiskViewer()
+    first = SphereCanvas(v)
+    first.azimuth, first.elevation, first.zoom = 0.25, -0.5, 1.7
+    another = SphereCanvas(v)
+    assert (another.azimuth, another.elevation, another.zoom) == (0.25, -0.5, 1.7)
+    independent = SphereCanvas(EllipticDiskViewer())
+    assert (independent.azimuth, independent.elevation, independent.zoom) == HOME
+    first.reset()
+    assert (v.sphere_view.azimuth, v.sphere_view.elevation, v.sphere_view.zoom) == HOME
+
+
 # ---------------------------------------------------------------- images
 
 def test_rendering_writes_an_image_of_both_panes():

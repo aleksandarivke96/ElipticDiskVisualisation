@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 
-from elliptic import EllipticDiskViewer, gclc
+from elliptic import EllipticDiskViewer, gclc, tikz
 from elliptic.model import LINE, SEGMENT
 
 
@@ -41,8 +41,12 @@ def main() -> None:
                         help="render to an image file instead of opening a window")
     parser.add_argument("--gclc", metavar="PATH",
                         help="write the construction as a GCLC file and exit")
+    parser.add_argument("--tikz", metavar="PATH",
+                        help="write the construction as TikZ source in a .txt file and exit")
+    parser.add_argument("--tikz-3d", metavar="PATH",
+                        help="write the 3-D sphere view as TikZ in a .txt file and exit")
     parser.add_argument("--plain", action="store_true",
-                        help="with --gclc: black ink only, construction lines dashed")
+                        help="with --gclc, --tikz or --tikz-3d: monochrome, construction lines dashed")
     projection = parser.add_mutually_exclusive_group()
     projection.add_argument("--conformal", dest="conformal", action="store_true",
                             default=True,
@@ -63,10 +67,19 @@ def main() -> None:
                               projection=viewer.projection)
         how = " (plain)" if args.plain else ""
         print(f"wrote {written} for GCLC, {viewer.projection.name} view{how}")
+    if args.tikz:
+        written = tikz.export(viewer.construction, args.tikz, plain=args.plain,
+                              projection=viewer.projection)
+        how = " (plain)" if args.plain else ""
+        print(f"wrote {written} for TikZ, {viewer.projection.name} view{how}")
+    if args.tikz_3d:
+        written = viewer.save_sphere_tikz(args.tikz_3d, plain=args.plain)
+        how = " (plain)" if args.plain else ""
+        print(f"wrote {written} for 3D TikZ, {viewer.projection.name} view{how}")
     if args.save:
         viewer.save(args.save)
         print(f"wrote {args.save}")
-    if not (args.save or args.gclc):
+    if not (args.save or args.gclc or args.tikz or args.tikz_3d):
         viewer.show()
 
 

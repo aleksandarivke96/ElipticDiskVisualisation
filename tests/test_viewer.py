@@ -500,6 +500,181 @@ def test_a_submit_with_no_box_up_writes_nothing():
     assert in_an_empty_folder(stray) == []
 
 
+def test_the_tikz_prompt_writes_the_current_projection_and_resets_the_format():
+    import tempfile
+    from pathlib import Path
+
+    from elliptic import tikz
+
+    v = viewer_with("segment")
+    click(v, 0.5, 0.35)
+    click(v, -0.45, 0.15)
+    key(v, "o")
+    key(v, "k")
+    assert v.prompting and v.export_format == "tikz"
+    assert v.default_export == "construction.txt" and v.export_label == "TikZ"
+    with tempfile.TemporaryDirectory() as folder:
+        expected = Path(folder) / "curved.txt"
+        assert v.submit_prompt(str(expected.with_suffix(""))) == str(expected)
+        assert expected.read_text(encoding="utf-8") == tikz.to_tikz(
+            v.construction, projection=geo.STEREOGRAPHIC)
+    assert not v.prompting and "for TikZ" in v.message
+
+    key(v, "g")
+    assert v.export_format == "gclc" and v.default_export == "construction.gcl"
+
+
+def test_tikz_saves_plain_from_the_toggle_or_shift_k():
+    import tempfile
+    from pathlib import Path
+
+    from elliptic import tikz
+
+    v = viewer_with("segment")
+    click(v, 0.5, 0.35)
+    click(v, -0.45, 0.15)
+    for shortcut, plain_flag in (("k", True), ("K", False)):
+        v.flags["plain"] = plain_flag
+        key(v, shortcut)
+        assert v.plain_export and v.export_format == "tikz"
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "plain.txt"
+            v.submit_prompt(str(path))
+            assert path.read_text(encoding="utf-8") == tikz.to_tikz(
+                v.construction, plain=True, projection=geo.ORTHOGONAL)
+        assert "plain TikZ" in v.message
+    key(v, "k")
+    assert not v.plain_export, "Shift-K does not change the Plain toggle"
+
+
+def test_tikz_prompt_cancellation_and_write_errors():
+    import tempfile
+    from pathlib import Path
+
+    v = viewer_with()
+    key(v, "k")
+    key(v, "escape")
+    assert v.submit_prompt("cancelled.txt") is None
+    with tempfile.TemporaryDirectory() as folder:
+        key(v, "k")
+        missing = Path(folder) / "missing" / "drawing.txt"
+        assert v.submit_prompt(str(missing)) is None
+        assert "could not write it" in v.message and not v.prompting
+        assert not missing.exists()
+
+
+def test_cli_tikz_export_and_combined_plain_exports():
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    from elliptic import tikz
+
+    main_path = Path(__file__).resolve().parents[1] / "main.py"
+    for combined in (False, True):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "drawing"
+            command = [sys.executable, str(main_path), "--points", "0.3", "0.2",
+                       "-0.4", "0.1", "--segments", "0", "1", "--tikz", str(path)]
+            if combined:
+                command += ["--gclc", str(path), "--plain", "--orthogonal"]
+            done = subprocess.run(command, cwd=folder, capture_output=True,
+                                  text=True, timeout=30)
+            assert done.returncode == 0, done.stderr
+            assert "for TikZ" in done.stdout
+            expected_viewer = EllipticDiskViewer()
+            expected_viewer.flags["conformal"] = not combined
+            expected_viewer.set_tool("segment")
+            click(expected_viewer, 0.3, 0.2)
+            click(expected_viewer, -0.4, 0.1)
+            assert path.with_suffix(".txt").read_text(encoding="utf-8") == tikz.to_tikz(
+                expected_viewer.construction, plain=combined,
+                projection=expected_viewer.projection)
+            if combined:
+                assert "for GCLC" in done.stdout
+                assert path.with_suffix(".gcl").exists()
+
+
+def test_sphere_tikz_prompt_uses_current_settings_and_keeps_them():
+    from pathlib import Path
+    import tempfile
+    from elliptic import tikz_sphere
+
+    v = viewer_with("segment")
+    click(v, 0.5, 0.35)
+    click(v, -0.45, 0.15)
+    v.sphere_view.azimuth = 0.7
+    v.sphere_view.elevation = -0.3
+    v.sphere_view.zoom = 1.4
+    v.flags.update(labels=False, antipodes=True, rays=False)
+    flags = dict(v.flags)
+    for shortcut, plain in (("v", False), ("V", True)):
+        key(v, shortcut)
+        assert v.prompting and v.export_format == "tikz3d"
+        assert v.default_export == "sphere.txt"
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "sphere"
+            written = v.submit_prompt(str(path))
+            assert written == str(path.with_suffix(".txt"))
+            assert Path(written).read_text(encoding="utf-8") == tikz_sphere.to_tikz(
+                v.construction, projection=v.projection, flags=flags, plain=plain,
+                azimuth=0.7, elevation=-0.3, zoom=1.4)
+        assert not v.prompting and "3D TikZ" in v.message
+        assert v.flags == flags, "export does not alter the display toggles"
+    key(v, "k")
+    assert v.export_label == "TikZ" and v.default_export == "construction.txt"
+
+
+def test_sphere_export_cancellation_and_write_errors():
+    from pathlib import Path
+    import tempfile
+
+    v = viewer_with()
+    key(v, "v")
+    key(v, "escape")
+    assert v.submit_prompt("cancelled.txt") is None
+    with tempfile.TemporaryDirectory() as folder:
+        key(v, "v")
+        path = Path(folder) / "missing" / "sphere.txt"
+        assert v.submit_prompt(str(path)) is None
+        assert "could not write it" in v.message and not path.exists()
+
+
+def test_cli_exports_sphere_without_opening_a_window():
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+    from elliptic import tikz_sphere
+
+    main_path = Path(__file__).resolve().parents[1] / "main.py"
+    for combined in (False, True):
+        with tempfile.TemporaryDirectory() as folder:
+            sphere_path = Path(folder) / "sphere"
+            command = [sys.executable, str(main_path), "--points", "0.3", "0.2",
+                       "-0.4", "0.1", "--segments", "0", "1",
+                       "--tikz-3d", str(sphere_path)]
+            if combined:
+                command += ["--tikz", str(Path(folder) / "disk.txt"), "--plain",
+                            "--orthogonal", "--no-sphere"]
+            done = subprocess.run(command, cwd=folder, capture_output=True,
+                                  text=True, timeout=30)
+            assert done.returncode == 0, done.stderr
+            assert "for 3D TikZ" in done.stdout
+            expected = EllipticDiskViewer()
+            expected.flags["conformal"] = not combined
+            expected.set_tool("segment")
+            click(expected, 0.3, 0.2)
+            click(expected, -0.4, 0.1)
+            text = sphere_path.with_suffix(".txt").read_text(encoding="utf-8")
+            assert text == tikz_sphere.to_tikz(expected.construction, plain=combined,
+                                             projection=expected.projection,
+                                             flags=expected.flags)
+            if combined:
+                assert (Path(folder) / "disk.txt").exists()
+
+
 def test_the_conformal_toggle_redraws_the_same_construction_elsewhere():
     v = viewer_with("line")
     click(v, 0.5, 0.35)

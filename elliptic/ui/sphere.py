@@ -19,68 +19,11 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QBrush, QPainter, QPainterPath, QRadialGradient
 from PySide6.QtWidgets import QWidget
 
-from .. import geometry as geo
 from .. import scene as sc
+from ..sphere import (BACK, COL_EQUATOR, COL_HINT, COL_PAPER, COL_PLATE, COL_RAY,
+                      COL_WIRE, HOME, MARGIN, PLATE, camera, cap_outline,
+                      great_circle, parallel, split_at_silhouette)
 from . import paint
-
-COL_WIRE = "#9aa4b4"
-COL_EQUATOR = "#3f4756"
-COL_PLATE = "#6f7c90"
-COL_RAY = "#8a93a3"
-COL_PAPER = "#ffffff"
-COL_HINT = "#98a0ac"
-
-MARGIN = 1.28
-BACK = 0.30       # how much of a curve survives being behind the ball
-PLATE = 0.32      # and how much of the flattened copy in the disk plane survives
-HOME = (np.radians(-62.0), np.radians(35.0), 1.0)  # azimuth, elevation, zoom
-
-
-def camera(azimuth: float, elevation: float):
-    """Right, up and towards-the-camera unit vectors of an orthographic camera."""
-    ce, se = np.cos(elevation), np.sin(elevation)
-    towards = np.array([ce * np.cos(azimuth), ce * np.sin(azimuth), se])
-    right = np.cross([0.0, 0.0, 1.0], towards)
-    length = float(np.linalg.norm(right))
-    right = np.array([1.0, 0.0, 0.0]) if length < 1e-9 else right / length
-    return right, np.cross(towards, right), towards
-
-
-def split_at_silhouette(points: np.ndarray, towards: np.ndarray):
-    """Cut a curve where it goes round the back, as (piece, in front) pairs.
-
-    The crossing point is interpolated rather than snapped to the nearest sample,
-    so the front piece and the back piece meet exactly on the silhouette.
-    """
-    points = np.asarray(points, dtype=float)
-    if len(points) == 0:
-        return []
-    depth = points @ towards
-    pieces, run, front = [], [points[0]], bool(depth[0] >= 0)
-    for i in range(1, len(points)):
-        if (depth[i] >= 0) == front:
-            run.append(points[i])
-            continue
-        gap = depth[i - 1] - depth[i]
-        t = 0.0 if abs(gap) < 1e-15 else depth[i - 1] / gap
-        edge = points[i - 1] + t * (points[i] - points[i - 1])
-        run.append(edge)
-        pieces.append((np.array(run), front))
-        run, front = [edge, points[i]], not front
-    pieces.append((np.array(run), front))
-    return [(piece, is_front) for piece, is_front in pieces if len(piece) > 1]
-
-
-def great_circle(normal, samples: int = 180) -> np.ndarray:
-    e1, e2 = geo.plane_basis(np.asarray(normal, dtype=float))
-    t = np.linspace(0.0, 2.0 * np.pi, samples)
-    return np.cos(t)[:, None] * e1 + np.sin(t)[:, None] * e2
-
-
-def parallel(height: float, samples: int = 120) -> np.ndarray:
-    r = float(np.sqrt(max(0.0, 1.0 - height * height)))
-    t = np.linspace(0.0, 2.0 * np.pi, samples)
-    return np.column_stack([r * np.cos(t), r * np.sin(t), np.full_like(t, height)])
 
 
 class SphereCanvas(QWidget):
@@ -89,13 +32,38 @@ class SphereCanvas(QWidget):
     def __init__(self, viewer, parent=None):
         super().__init__(parent)
         self.viewer = viewer
-        self.azimuth, self.elevation, self.zoom = HOME
         self._grabbed = None
         self.setMinimumSize(300, 300)
         self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     # ------------------------------------------------------------------ geometry
+
+    # The viewer owns the camera so both exports and new canvases keep the view
+    # established by dragging and zooming this pane.
+    @property
+    def azimuth(self) -> float:
+        return self.viewer.sphere_view.azimuth
+
+    @azimuth.setter
+    def azimuth(self, value: float) -> None:
+        self.viewer.sphere_view.azimuth = value
+
+    @property
+    def elevation(self) -> float:
+        return self.viewer.sphere_view.elevation
+
+    @elevation.setter
+    def elevation(self, value: float) -> None:
+        self.viewer.sphere_view.elevation = value
+
+    @property
+    def zoom(self) -> float:
+        return self.viewer.sphere_view.zoom
+
+    @zoom.setter
+    def zoom(self, value: float) -> None:
+        self.viewer.sphere_view.zoom = value
 
     @property
     def radius(self) -> float:
@@ -164,20 +132,8 @@ class SphereCanvas(QWidget):
         painter.drawEllipse(QPointF(cx, cy), r, r)
 
     def cap_outline(self, samples: int = 121) -> np.ndarray:
-        """The silhouette of the upper hemisphere, in screen units.
-
-        A sight line through screen point (X, Y) meets the sphere at height
-        `Y cos(el) + t sin(el)` with `t = +-sqrt(1 - X^2 - Y^2)`, so some point of
-        it is in the upper half exactly when `Y >= -sin(el) sqrt(1 - X^2)`.  The
-        region is therefore bounded above by the top of the silhouette circle and
-        below by half of the projected equator - whichever half, the same formula
-        gives it, so this works with the camera under the equator too.
-        """
-        t = np.linspace(0.0, np.pi, samples)
-        squash = -np.sin(self.elevation)
-        top = np.column_stack([np.cos(t), np.sin(t)])
-        bottom = np.column_stack([np.cos(t[::-1]), squash * np.sin(t[::-1])])
-        return np.vstack([top, bottom])
+        """The silhouette of the upper hemisphere, in screen units."""
+        return cap_outline(self.elevation, samples)
 
     def _cap(self, painter: QPainter) -> None:
         """Tint the half of the ball that the disk is a picture of."""

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEd
                                QSlider, QSplitter, QVBoxLayout, QWidget)
 
 from ..model import PALETTE
-from ..viewer import ACTIONS, DEFAULT_EXPORT, TOGGLES, TOOLS
+from ..viewer import ACTIONS, TOGGLES, TOOLS
 
 ARROW_KEYS = {Qt.Key.Key_Left: "left", Qt.Key.Key_Right: "right"}
 from .disk import DiskCanvas
@@ -217,12 +217,13 @@ class MainWindow(QMainWindow):
 
 
 class SavePrompt(QFrame):
-    """The little box asking where the GCLC file should go, floated over the disk."""
+    """The little box asking where an export should go, floated over the disk."""
 
     def __init__(self, viewer, over: QWidget):
         super().__init__(over)
         self.viewer = viewer
         self.over = over
+        self._shown_format = None
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setStyleSheet("QFrame { background: #ffffff; border: 1px solid #9aa4b4;"
                            " border-radius: 4px; }")
@@ -230,14 +231,14 @@ class SavePrompt(QFrame):
         row.setContentsMargins(10, 8, 10, 8)
         self.caption = QLabel("save GCLC to")
         self.caption.setStyleSheet("border: none; color: #1f2430;")
-        self.field = QLineEdit(DEFAULT_EXPORT)
+        self.field = QLineEdit(viewer.default_export)
         self.field.setMinimumWidth(230)
         self.field.returnPressed.connect(self._submit)
         row.addWidget(self.caption)
         row.addWidget(self.field)
 
     def _submit(self) -> None:
-        self.viewer.submit_prompt(self.field.text().strip() or DEFAULT_EXPORT)
+        self.viewer.submit_prompt(self.field.text().strip() or self.viewer.default_export)
         self.window().setFocus()
 
     def follow(self) -> None:
@@ -247,10 +248,11 @@ class SavePrompt(QFrame):
                 self.hide()
                 self.window().setFocus()
             return
-        self.caption.setText("save plain GCLC to" if self.viewer.plain_export
-                             else "save GCLC to")
-        if not self.isVisible():
-            self.field.setText(DEFAULT_EXPORT)
+        plain = "plain " if self.viewer.plain_export else ""
+        self.caption.setText(f"save {plain}{self.viewer.export_label} to")
+        if not self.isVisible() or self._shown_format != self.viewer.export_format:
+            self.field.setText(self.viewer.default_export)
+            self._shown_format = self.viewer.export_format
             self.show()
         self.adjustSize()
         self.move(max(0, (self.over.width() - self.width()) // 2),

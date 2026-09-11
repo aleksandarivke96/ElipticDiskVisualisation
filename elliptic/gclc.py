@@ -26,6 +26,8 @@ travel with the file anyway.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from . import geometry as geo
@@ -476,7 +478,7 @@ def export(construction: Construction, path: str, **kwargs) -> str:
     path = str(path).strip()
     if not path:
         raise ValueError("a file name is needed")
-    if "." not in path.rsplit("/", 1)[-1]:
+    if not Path(path).suffix:
         path += ".gcl"
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(to_gclc(construction, **kwargs))
