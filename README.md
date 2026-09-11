@@ -1,37 +1,29 @@
-# Elliptic geometry — closed disk model
+# Elliptic geometry: closed disk model
 
-Interactive visualisation of the **closed disk (hemisphere) model** of the elliptic
-plane. Build constructions out of points, lines, segments, triangles and circles
-and watch them behave the way elliptic geometry says they must — on a flat disk
-on the left, and on the sphere the disk is a picture of on the right. What you
-build can be exported as a PNG image, a [GCLC](https://poincare.matf.bg.ac.rs/~janicic/gclc/)
-file or TikZ source for LaTeX.
+Explore elliptic geometry with the **closed disk (hemisphere) model**. Build
+points, lines, segments, triangles and circles, then view them on a flat disk
+and a 3D sphere side by side. Export your construction as a PNG image, a
+[GCLC](https://poincare.matf.bg.ac.rs/~janicic/gclc/) file or TikZ source for LaTeX.
 
 **Contents**
 
-1. [Install and run locally](#1-install-and-run-locally) — Linux, Windows, checking the install, updating, uninstalling
-2. [Using the program](#2-using-the-program) — the palette, the sphere pane, the two projections, the command line
-3. [Exporting](#3-exporting) — TikZ and GCLC
-4. [The geometry](#4-the-geometry) — what every object means
+1. [Install and run locally](#1-install-and-run-locally)
+2. [Using the program](#2-using-the-program)
+3. [Exporting](#3-exporting)
+4. [The geometry](#4-the-geometry)
 5. [Project layout](#5-project-layout)
-
----
 
 ## 1. Install and run locally
 
-The program is a plain Python application. It is not "installed" in the usual
-sense: everything it needs goes into a **virtual environment** (a private
-folder named `.venv`) inside the project folder, nothing is written anywhere
-else on the machine, and deleting the folder removes it completely. The steps
-below are the same on every machine; only the shell commands differ between
-Linux and Windows.
+The program runs in Python. Its packages go into a **virtual environment**,
+a folder named `.venv` inside the project. Follow the steps for your system below.
 
 ### What you need
 
 | | |
 | --- | --- |
 | **Python** | 3.10 or newer. Developed and tested on 3.13. |
-| **Packages** | `numpy` and `PySide6` (Qt 6) — both listed in [requirements.txt](requirements.txt) and installed in step 3 below. |
+| **Packages** | `numpy` and `PySide6` (Qt 6), installed from [requirements.txt](requirements.txt) in step 3. |
 | **Git** | optional, only to clone and later update the repository. A downloaded ZIP works just as well. |
 | **LaTeX** | optional, only to rebuild the PDF in [docs/](docs/) or to typeset the TikZ exports. |
 
@@ -66,7 +58,7 @@ The source lives at <https://github.com/aleksandarivke96/ElipticDiskVisualisatio
    pip install -r requirements.txt
    ```
 
-   The prompt gains a `(.venv)` prefix while the environment is active.
+   The terminal prompt shows `(.venv)` while the environment is active.
 
 4. **Run it:**
 
@@ -75,15 +67,14 @@ The source lives at <https://github.com/aleksandarivke96/ElipticDiskVisualisatio
    ```
 
    A window opens with the tool palette on the left, the disk in the middle and
-   the 3-D sphere on the right. Start clicking in the disk.
+   the 3D sphere on the right. Click in the disk to start building.
 
-**Every later time:** open a terminal in the folder, `source .venv/bin/activate`,
-`python main.py`. You can also skip the activation and call the environment's
-interpreter directly: `.venv/bin/python main.py`.
+**To run again:** open a terminal in the project folder and run
+`.venv/bin/python main.py`. You can also activate the environment and run
+`python main.py`.
 
-**If no window opens.** PySide6 brings its own copy of Qt, but Qt relies on a
-handful of system libraries that a minimal installation may lack. The error
-looks like *"Could not load the Qt platform plugin 'xcb'"*. On Debian/Ubuntu:
+**If no window opens:** Qt may need extra system libraries. If you see
+*"Could not load the Qt platform plugin 'xcb'"*, install these on Debian/Ubuntu:
 
 ```bash
 sudo apt install libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 \
@@ -92,17 +83,14 @@ sudo apt install libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 \
 
 On a Wayland desktop, if the window behaves oddly, force the X11 backend with
 `QT_QPA_PLATFORM=xcb python main.py`. If `pip install` complains about an
-*externally-managed-environment*, the virtual environment is not active — run
-the `source` line from step 3 again; nothing here should ever be installed into
-the system Python.
+*externally-managed-environment*, activate the virtual environment with the
+`source` line from step 3, then try again.
 
 ### Windows
 
 1. **Install Python** from [python.org](https://www.python.org/downloads/) and
-   tick **"Add python.exe to PATH"** in the installer. From a terminal,
-   `winget install Python.Python.3.12` does the same. Prefer this over the
-   Microsoft Store build: the Store version lives under a very long path, which
-   can make the PySide6 install fail.
+   tick **"Add python.exe to PATH"** in the installer. You can also use
+   `winget install Python.Python.3.12` in a terminal.
 
 2. **Get the code.** In a terminal:
 
@@ -112,7 +100,7 @@ the system Python.
    ```
 
    Without Git: download the ZIP from GitHub, unpack it, then open a terminal
-   in that folder (in Explorer, right-click the folder → *Open in Terminal*, or
+   in that folder (in Explorer, right click the folder → *Open in Terminal*, or
    type `powershell` into the address bar).
 
 3. **Create the virtual environment** and install the two packages into it.
@@ -133,7 +121,7 @@ the system Python.
    Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
    ```
 
-   The prompt gains a `(.venv)` prefix while the environment is active.
+   The terminal prompt shows `(.venv)` while the environment is active.
 
 4. **Run it:**
 
@@ -141,25 +129,25 @@ the system Python.
    python main.py
    ```
 
-**Every later time:** open a terminal in the folder, run the activation line,
-`python main.py`. Without activating: `.venv\Scripts\python.exe main.py`.
+**To run again:** open a terminal in the project folder and run
+`.venv\Scripts\python.exe main.py`. You can also activate the environment and
+run `python main.py`.
 
 ### Checking the install
 
 With the environment active, from the project folder:
 
 ```bash
-python main.py --help     # lists the command-line options
-python -m tests           # runs every check; ends with "258 passed, 0 failed"
+python main.py --help     # lists the available options
+python -m tests           # runs all checks
 ```
 
-The tests need no screen — the window tests run on Qt's offscreen platform —
-so they work over SSH and in CI as well.
+The window tests use Qt's offscreen platform, so the tests also work over SSH
+and in CI without a display.
 
 ### Running without a screen
 
-Give `main.py` something to export and it draws the construction to a file and
-exits instead of opening a window:
+Add an export option to save a file without opening a window:
 
 ```bash
 python main.py --points 0.35 0.45 -0.6 0.2 0.1 -0.7 --lines 0 1 --perps 2 0 --save out.png
@@ -172,23 +160,20 @@ On Linux the program switches to Qt's offscreen platform by itself when neither
 
 ### Updating, leaving, uninstalling
 
-- **Update** — inside the folder, with the environment active:
-  `git pull` then `pip install --upgrade -r requirements.txt`. (For a ZIP
-  install, unpack the new version over the old one and run the `pip` line.)
-- **Leave the environment** — type `deactivate`, or just close the terminal.
-- **Uninstall** — delete the `.venv` folder, or the whole project folder.
-  Nothing was written anywhere else.
+* **Update:** in the project folder, with the environment active, run `git pull`
+  then `pip install --upgrade -r requirements.txt`. For a ZIP download, unpack
+  the new version over the old one and run the same `pip` command.
+* **Leave the environment:** type `deactivate` or close the terminal.
+* **Uninstall:** delete `.venv` to remove the packages, or delete the whole
+  project folder.
 
-### Building the write-up (optional)
+### Building the PDF (optional)
 
-[docs/elliptic-disk-model.pdf](docs/elliptic-disk-model.pdf) is the mathematics
-behind the program — both projections, every object, with proofs — and it is
-already built. To rebuild it after editing the `.tex` source you need a LaTeX
-distribution (TeX Live on Linux, [MiKTeX](https://miktex.org/) or TeX Live on
-Windows). Then `make -C docs` on Linux, or on either system run
-`pdflatex elliptic-disk-model.tex` twice inside the `docs` folder.
-
----
+[docs/elliptic-disk-model.pdf](docs/elliptic-disk-model.pdf) explains both
+projections and the geometry, with proofs. The PDF is included in the repository.
+To rebuild it, install TeX Live or [MiKTeX](https://miktex.org/), then run
+`make -C docs` on Linux. On either system, you can instead run
+`pdflatex elliptic-disk-model.tex` twice from the `docs` folder.
 
 ## 2. Using the program
 
@@ -198,116 +183,105 @@ Pick a tool on the left (or press its key), then click in the disk.
 
 | tool | key | what a click does |
 | --- | --- | --- |
-| **Point** | `1` | drops a point; keep the button held to slide it into place |
-| **Line** | `2` | first click picks a point, second click joins them into a full elliptic line |
-| **Segment** | `3` | same, but draws the shortest path between the two points, with the rest of the line faint |
-| **Perpendicular** | `4` | click a point and a line, **in either order**, to drop the perpendicular from the point onto the line |
-| **Triangle** | `5` | three clicks; the sides are ordinary segments and the angles are measured |
+| **Point** | `1` | place a point; hold and drag to adjust it |
+| **Line** | `2` | click two points to draw a full elliptic line |
+| **Segment** | `3` | click two points to draw the shortest path, with the rest of the line faint |
+| **Perpendicular** | `4` | click a point and a line in either order to draw a perpendicular |
+| **Triangle** | `5` | click three points to draw the sides and measure the angles |
 | **Circle** | `0` | click the centre, then any point the circle should pass through |
 | **Midpoint** | `m` | click two points for the middle of the shortest path between them |
 | **Meet** | `6` | click two lines to name the point where they cross |
-| **Bisect angle** | `n` | click two lines; both bisectors of their angles appear, as one action |
+| **Bisect angle** | `n` | click two lines to draw both angle bisectors |
 | **Polar / Pole** | `7` | click a point for its polar line, or a line for its pole |
-| **Move** | `8` | drags a point; everything built on it follows |
+| **Move** | `8` | drag a point and update everything built on it |
 | **Rotate about** | `t` | click the point the **Rotate** slider should turn the figure around |
-| **Delete** | `9` | removes a point (and its lines) or a line on its own |
+| **Delete** | `9` | remove an object and everything that depends on it |
 
-Line, Segment, Perpendicular, Triangle and Circle snap onto an existing point if you
-click within ~13 px of one, and otherwise create a new point where you clicked —
-so two clicks on empty space give you a line without placing its points first.
-`esc` cancels a half-finished one.
+Line, Segment, Perpendicular, Triangle and Circle use an existing point when
+you click within about 13 pixels of it. Otherwise they create a new point.
+For example, two clicks on empty space create a line and its two points.
+Press `esc` to cancel an unfinished construction. Clicks outside the disk snap
+to the rim.
 
-Points come in two sorts. **Filled** ones are free: you put them there and you
-can drag them. **Hollow diamonds** are derived — a meet or a pole — and they go
-where their lines say they go. Drag what they are built on instead. Everything
-is live: move one vertex and the triangles, perpendiculars, poles and meets
-downstream of it all follow.
+**Filled points** can be dragged directly. **Hollow diamonds**, such as
+intersections and poles, are calculated from other objects. Move those objects
+to change them. Everything built on a moved point updates automatically.
 
-**Show** toggles: `l` labels (and the triangle readouts), `p` poles, `x` meets
-(intersections), `e` rim ends, `o` switches the default **conformal** view to
-the orthogonal one (see [two ways of looking at it](#two-ways-of-looking-at-it)),
-`b` **plain** — black ink on white, with line weight doing the work colour was
-doing, and the rest of each line dashed. Turn it on and the picture is the
-figure you would put in a paper; **Save GCLC** or **Save TikZ** then exports
-that style. And for the right-hand pane: `s` shows or hides the **3-D sphere**,
-`r` its **projector** rays, `a` the **antipodes**.
+**Display controls:**
 
-The **Rotate** slider (`←`/`→` to nudge) turns the whole construction about a
-point of your choosing — a live isometry of the plane, since a rotation about
-an elliptic point *is* the rotation of the sphere about that point's axis.
-Pick the pivot with the **Rotate about** tool (`t`): click any point — or any
-empty spot, which makes one — and it wears a small ring; with none chosen the
-figure turns about the centre of the disk. A pivot near the middle spins the
-picture; a pivot at the rim rolls the figure out through the boundary and back
-in on the far side. Watch the triangle readout while you drag: everything
-moves except the pivot, and no distance, angle or area changes — that is what
-a rigid motion of elliptic geometry means. Only free points really move
-(derived points follow), nothing lands in the undo history, choosing a new
-pivot restarts the slider at zero, and dragging it back to zero brings the
-figure back exactly.
+| key | action |
+| --- | --- |
+| `l` | show labels and triangle measurements |
+| `p` | show poles |
+| `x` | show intersections |
+| `e` | show line endpoints on the rim |
+| `o` | switch between conformal and orthogonal projection |
+| `b` | use black and white, with dashed line continuations |
+| `s` | show the 3D sphere |
+| `r` | show projection rays |
+| `a` | show antipodes |
 
-**Edit**: `u` undo the last action — a triangle and its three sides go together —
-`c` clear everything. **Save GCLC** (`g`), **Save TikZ** (`k`) and **Save 3D
-TikZ** (`v`) open a box over the disk: type a file name, press enter, `esc`
-cancels. The capital letters `G`, `K` and `V` save the same thing plain, in
-black and white. **Colour** swatches set the colour of the *next* object;
-`auto` cycles the palette. Clicks outside the disk snap to the rim.
+The **Rotate** slider turns the construction around a chosen point while
+preserving distances, angles and areas. Use `←`/`→` for small adjustments.
+Select the pivot with **Rotate about** (`t`), then click a point or an empty
+spot to create one. A small ring marks the pivot. The default pivot is the disk
+centre. A pivot on the rim moves the figure through the boundary and back in
+on the opposite side.
+
+Rotation is not added to the undo history. Choosing a new pivot resets the
+slider to zero; returning the slider to zero restores the starting position
+for that pivot.
+
+**Editing and saving:** press `u` to undo the last action or `c` to clear
+everything. Undo removes a triangle and its sides together. **Save GCLC** (`g`),
+**Save TikZ** (`k`) and **Save 3D TikZ** (`v`) open a filename box. Type a name
+and press enter, or `esc` to cancel. Use `G`, `K` or `V` to save in black and
+white. The **Colour** swatches set the next object's colour; `auto` cycles
+through the palette.
 
 ### The sphere on the right
 
-The disk is the upper hemisphere flattened out, and the right-hand pane
-un-flattens it. The same construction is drawn twice over: once on the ball it
-actually lives on, as arcs of real great circles, and once lying in the
-equatorial plane underneath — which is the picture the left-hand pane shows.
-Dotted **projector** rays join the two, one per point, so you can see exactly
-which point of the sphere became which point of the disk. **Drag a vertex on the
-left and the great circle swings round on the right.**
+The right pane shows the construction on the sphere and its projection onto
+the equatorial disk. Dotted **projector** rays connect each sphere point to its
+disk position. Changes made on the left appear on the right immediately.
 
-The tinted half is the model: `{v : v·ẑ ≥ 0}`, one representative of every
-elliptic point. Turn on **Antipodes** (`a`) and each point's other
-representative `−v` appears, joined to it through the centre — that dotted line
-*is* the identification, and you can watch a point cross the rim on the left
-while its antipode crosses in from the other side.
+The tinted upper hemisphere contains a representative of every elliptic point.
+Turn on **Antipodes** (`a`) to show each point's opposite representative `−v`,
+joined to it through the sphere's centre. These two representatives are the
+same elliptic point.
 
-The rays change with the projection. In the default **conformal** view they
-start at the south pole, which is what stereographic projection is; press `o`
-and they drop straight down for the orthogonal view. Everything else in the
-pane stays put, because nothing about the sphere depends on how you choose to
-flatten it.
+In the default **conformal** view, projection rays start at the south pole.
+Press `o` for the orthogonal view, where rays drop straight down. Changing the
+projection does not change the construction on the sphere.
 
-Drag to turn the camera, wheel to zoom, double-click to go back to where you
-started. The camera is orthographic, so the silhouette is exactly the unit
-circle and a point is in front exactly when it is on the camera's side of the
-plane through the centre — hidden lines are cut on that boundary rather than
-guessed at, and what goes round the back is drawn faintly through the ball.
-Dragging here only turns the camera; the construction is edited on the disk.
-Start with `--no-sphere` to leave the pane out altogether.
+Drag to turn the camera, scroll to zoom, and double click to reset the view.
+Curves behind the sphere appear faint. Edit the construction in the disk pane;
+dragging in the sphere pane only moves the camera. Use `--no-sphere` to hide it
+at startup.
 
 ### Two ways of looking at it
 
-The disk is the hemisphere drawn flat, and there is more than one way to draw it
-flat. `o` switches between them; the model, the tools and every measurement are
-untouched — only where a point of the sphere lands on the page.
+Press `o` to switch between two projections of the hemisphere onto the disk.
+This changes how the construction looks, but preserves its geometry and
+measurements. Here `n` is the unit normal of a line and `p`, `q` are unit sphere
+vectors.
 
 | | **conformal** (default) | **orthogonal** (`o`) |
 | --- | --- | --- |
 | how | from the south pole: `(x,y)/(1+z)` | straight down: drop `z` |
-| a line is | an arc of a circle, centre `(n₁,n₂)/n₃`, radius `1/\|n₃\|` | half an ellipse, semi-axes 1 and `\|n_z\|` |
-| angles | **true everywhere** — the right-angle marks square up | distorted away from the centre |
-| distance | not read off the page | `arccos\|p·q\|`, rim at exactly π/2 |
+| a line is | a circular arc, centre `(n_x,n_y)/n_z`, radius `1/\|n_z\|` | half an ellipse with semi-major axis 1 and semi-minor axis `\|n_z\|` |
+| angles | preserved | generally distorted |
+| distance | `arccos(\|p·q\|)` on the sphere | the same sphere distance |
 | in GCLC | `drawellipsearc2` on a circle | `drawellipsearc2` |
 
-Both fix the rim, so opposite boundary points stay identified either way, and a
-diameter stays a diameter in both. The default conformal view is the textbook
-disk picture, including circles that may appear as two circular arcs; the
-orthogonal view is useful when the figure is about distance. Use
-`--orthogonal` to select it on the command line.
+Both projections keep the rim fixed and identify opposite boundary points.
+When `n_z = 0`, the line is a diameter in both views. The equator is the whole
+rim circle. Use `--orthogonal` to select the orthogonal view at startup.
 
 ### The command line
 
-Everything the palette can build, the command line can build too, and then
-either open the window on it or export it and exit. Coordinates name positions
-in the view being rendered, exactly like mouse clicks do.
+Use command line options to create a construction, then open it in the window
+or export it. Coordinates refer to positions in the selected disk projection.
 
 | option | meaning |
 | --- | --- |
@@ -327,12 +301,12 @@ in the view being rendered, exactly like mouse clicks do.
 | `--tikz-3d PATH` | write the sphere view as TikZ source and exit |
 | `--plain` | with the exports: monochrome, construction lines dashed |
 | `--conformal` / `--orthogonal` | choose the projection (conformal is the default) |
-| `--no-sphere` | leave out the 3-D pane |
+| `--no-sphere` | hide the 3D pane |
 
 Line indices count in creation order: `--lines`, then `--segments`, then the
-three sides of each `--triangles` entry, then `--perps`, then `--polars` — so a
-perpendicular can be dropped onto a triangle's side. This draws a triangle, its
-three altitudes and the orthocentre they share:
+three sides of each `--triangles` entry, then `--perps`, then `--polars`.
+For example, this draws a triangle, its three altitudes and their intersection
+(the orthocentre):
 
 ```bash
 python main.py --points 0.0 0.35 0.55 -0.3 -0.5 -0.25 \
@@ -341,14 +315,12 @@ python main.py --points 0.0 0.35 0.55 -0.3 -0.5 -0.25 \
 
 (On Windows write it on one line without the backslashes.)
 
----
-
 ## 3. Exporting
 
 ### TikZ
 
 **Save TikZ** (`k`, or `--tikz drawing.txt` on the command line) writes the
-2-D disk construction as a TikZ `tikzpicture` in a plain text file. The export
+2D disk construction as a TikZ `tikzpicture` in a plain text file. The export
 uses the current conformal or orthogonal view. If the filename has no extension,
 `.txt` is added automatically; the default filename is `construction.txt`.
 
@@ -372,16 +344,13 @@ text into the document or load the file with `\input{drawing.txt}`:
 ```
 
 **Save 3D TikZ** (`v`) exports the sphere view to `sphere.txt`. Turn and zoom the
-sphere before saving to choose the camera. The file includes the sphere grid,
-the construction on its surface, its flattened copy in the equatorial disk,
-and the enabled labels, poles, intersections, projector rays and antipodes.
-Rear curves are faded through the sphere. The **Conformal** toggle determines
-how the construction lands on the equatorial disk and how the projector rays run.
-Use `V`, or the **Plain** toggle, for a monochrome figure.
+sphere before saving to choose the view. The file includes the sphere grid,
+the construction on the sphere and disk, and any enabled labels, poles,
+intersections, projection rays and antipodes. Curves behind the sphere appear
+faded. Use `V` or the **Plain** toggle for black and white.
 
-The 3-D export is an editable vector picture of that camera view. Include it
-with `\input{sphere.txt}` using the same `\usepackage{tikz}` preamble above.
-On the command line, `--tikz-3d sphere.txt` uses the default camera; it can be
+Include the file with `\input{sphere.txt}` using the same LaTeX preamble above.
+On the command line, `--tikz-3d sphere.txt` uses the default camera and can be
 combined with the disk export:
 
 ```bash
@@ -396,156 +365,123 @@ projection. These exports combine freely with `--gclc drawing.gcl` and
 ### GCLC
 
 **Save GCLC** (`g`, or `--gclc out.gcl` on the command line) writes the current
-construction as a [GCLC](https://poincare.matf.bg.ac.rs/~janicic/gclc/) file —
-Predrag Janičić's *Geometry Constructions → LaTeX Converter*, University of
-Belgrade. From there:
+construction as a [GCLC](https://poincare.matf.bg.ac.rs/~janicic/gclc/) file.
+GCLC is Predrag Janičić's *Geometry Constructions → LaTeX Converter* from the
+University of Belgrade. Convert the exported file with:
 
 ```bash
 gclc drawing.gcl          # -> a LaTeX picture
 gclc -svg drawing.gcl     # -> SVG
 ```
 
-**The curves stay curves.** A great circle projects to an *ellipse* about the
-centre of the disk — semi-major axis 1, semi-minor axis `|n_z|` — and an elliptic
-line is exactly half of it. So each line is one `drawellipsearc` and each segment
-one `drawellipsearc2`, not a few hundred little straight pieces. The two
-degenerate cases say what they are: `n_z = 0` is a diameter, drawn straight, and
-the equator is the rim circle itself.
+The export uses the selected projection: circular arcs in the conformal view
+and elliptical arcs in the orthogonal view. Line and segment arcs use
+`drawellipsearc2`. Diameters are straight segments, and the equator is the rim
+circle.
 
-Everything is written in the model's own coordinates — GCLC's Cartesian layer
-(`ang_origin`, `ang_unit`, `ang_point`) puts the unit disk on the page, so the
-numbers in the file are the numbers in the construction rather than millimetres.
-Points arrive under their own names with their labels and colours; the disk, the
-identification chords, the right-angle marks and the angle arcs come across too.
-GCLC has no transparency, so what the viewer draws faintly is written as a paler
-shade of the same colour. The measurements with no GCLC home (a triangle's angles
-and its area) go into the comments, where they travel with the file anyway.
+Coordinates stay in the model's unit disk. The file includes point names,
+labels, colours, the disk boundary, identification chords and angle marks.
+GCLC uses paler colours for faint objects because it has no transparency.
+Triangle angle and area measurements are saved as comments.
 
-**Plain** (`G` in the viewer, or `--gclc out.gcl --plain`) draws it the way it
-would have been drawn on paper: no colour at all, and the rest of each line
-*dashed* rather than faint — `drawdashellipsearc`, which is the same arc in the
-same place, only broken. Black ink, bold construction, dashed continuations,
-italic labels: an old textbook figure.
+**Plain** (`G` in the viewer, or `--gclc out.gcl --plain`) uses black and white,
+bold construction lines and dashed continuations.
 
-Two things worth knowing. GCLC insets an arc by about a quarter of a millimetre
-at each end — invisible under the point marks, but that is why a segment stops
-a hair short of its point. And `circleprecision <n>` will make arcs smoother if
-you are exporting to LaTeX at a large size.
-
----
+GCLC shortens arcs slightly at their endpoints, usually hidden by the point
+marks. Increase `circleprecision <n>` if arcs look rough in a large LaTeX export.
 
 ## 4. The geometry
 
-The elliptic plane is the sphere with antipodal points identified. Each class
-`{v, −v}` has a representative on the closed upper hemisphere, and projecting
-that hemisphere straight down gives the closed unit disk — with **opposite
-boundary points being one and the same point**, which is what the dashed rim is
-there to remind you of. The full account, with proofs, is in
-[docs/elliptic-disk-model.pdf](docs/elliptic-disk-model.pdf).
+The elliptic plane is the unit sphere with antipodal points identified: `v` and
+`−v` represent the same point. The program uses the closed upper hemisphere and
+projects it onto the unit disk. **Opposite boundary points represent the same
+point** in both projections. See
+[docs/elliptic-disk-model.pdf](docs/elliptic-disk-model.pdf) for proofs.
 
-* **Point** — a disk point `(x, y)` lifts to `(x, y, √(1 − x² − y²))`.
-* **Line** — a great circle, i.e. the unit vectors orthogonal to a normal
-  `n = p × q`. Its upper half projects to *half* an ellipse with semi-major axis
-  1 and semi-minor axis `|n_z|`, running from a rim point to its antipode (the
-  hollow markers, joined by a dotted chord). `n_z = 0` degenerates to a diameter;
-  two rim points give the boundary circle itself.
-* **No parallels** — every pair of lines meets in exactly one point, marked `✕`
-  when *Meets* is on. Three lines through one point report a single meet. The
-  *Meet* tool turns a crossing into a real point you can build on, and the `✕`
-  gives way to it.
-* **Pole** — every line has one, the point at distance π/2 from all of it, drawn
-  as a star in the line's colour.
-* **A segment really has two midpoints.** *Midpoint* halves the shortest path —
-  the one the segment tool draws — but the two points also cut their line into a
-  second, longer arc, and that one has a middle too, a quarter turn (π/2) along
-  the line from the first. Drag the ends until they are exactly π/2 apart and
-  the two halvings trade places. The midpoint is derived: it stays halfway
-  through every drag, and it goes when either end goes.
-* **Angle bisectors come in pairs.** Two lines cross in one point but make two
-  pairs of vertical angles, so *Bisect angle* draws **two** bisectors — with
-  normals `m̂+n̂` and `m̂−n̂` — always perpendicular to each other and crossing at
-  the meet. They are live: drag a parent line and both halvings follow. A good
-  thing to try: bisect the angles at two vertices of a triangle, *Meet* the two
-  interior bisectors — that is the incentre — drop a *Perpendicular* from it
-  onto a side, and the circle about the incentre through the foot is the
-  inscribed circle, tangent to all three sides through every drag.
-* **Duality** — a point and a line are the same kind of thing here. The polar of
-  a point `P` is the line of everything π/2 away from it; the pole of a line is
-  the point π/2 from all of it; and each undoes the other exactly. So *Polar /
-  Pole* is one tool: click a point to get a line, click a line to get a point.
-  Dualise a whole figure and collinear points become concurrent lines.
-* **Perpendicular** — the perpendicular from a point `P` to a line `ℓ` is just
-  the join of `P` and the pole of `ℓ`, since every line through that pole crosses
-  `ℓ` at a right angle. So it exists and is unique for every `P` *except* the pole
-  itself, where every line through `P` is perpendicular and the tool says so. The
-  bold part runs from `P` down to the foot (small square); the distance shown is
-  `arcsin|p·n|`, which is π/2 minus the distance to the pole. A perpendicular is a
-  line like any other — you can drop a perpendicular onto a perpendicular, and
-  deleting a line takes everything built on it.
-* **The right-angle mark is honestly slanted.** Orthogonal projection is not
-  conformal, so a genuine right angle only *looks* like one near the centre. The
-  mark is a real square on the sphere, projected — the further out it sits, the
-  more it leans. It is dropped entirely at the rim, where it would tear across
-  the disk. A good check: drop perpendiculars from two different points onto the
-  same line and watch them meet at that line's pole.
-* **Distance** — the angle between the lifted vectors, folded by the
-  identification: `d = arccos(|p·q|)`, never more than π/2. When two points are
-  far apart the shortest path leaves the disk through the rim and re-enters
-  opposite; the segment is then drawn in two pieces.
-* **Triangle** — the angles are read off at the vertices, marked with little arcs
-  that are drawn on the sphere and projected, so they lean like the right-angle
-  mark does. Their sum always beats π, and by Girard's theorem the excess *is*
-  the area: `area = α + β + γ − π`. Drag a vertex and watch it move. Shrink the
-  triangle towards the centre and the excess goes to zero — Euclidean geometry
-  is what elliptic geometry looks like when you stop paying attention.
-* **A triangle that bounds nothing.** Three points do not always cut a piece out
-  of the plane. Follow the three shortest sides around and each one picks the
-  nearer lift of its far end; walking all three lands you back on `a` or on `−a`
-  according to the sign of `(a·b)(b·c)(c·a)`. When it lands on `−a` the loop runs
-  out through the rim and back in on the other side without ever enclosing a
-  disk, Girard's formula has nothing to apply to, and the readout says so
-  instead of printing a number. Pull one vertex back in and the area returns.
-* **Circle** — everything at one distance from a centre: a plane section of the
-  sphere, which the disk shows as a closed curve (an ellipse seen straight down,
-  a true circle in the conformal view — the centre visibly off-middle in both,
-  because the geometry's centre is not the picture's). Two clicks make one:
-  the centre, then any point it should pass through, and dragging either
-  resizes it live. Push the centre towards the rim and the far side of the
-  circle slips out through the boundary and comes back in opposite, in two
-  arcs, exactly as a long segment does. And grow the radius towards π/2 and
-  the circle flattens into a *line* — the polar of its centre, which the
-  readout names when you hit it. In this geometry a big enough circle is a
-  line, and that is duality made visible.
+* **Point.** A disk point `(x, y)` lifts to a unit vector on the hemisphere.
+  In the orthogonal view this is `(x, y, √(1 − x² − y²))`. In the default
+  conformal view it is `(2x, 2y, 1 − r²)/(1 + r²)`, where `r² = x² + y²`.
+* **Line.** Two distinct elliptic points with unit vectors `p` and `q` define
+  a great circle with unit normal `n = (p × q)/‖p × q‖`. Its points satisfy
+  `n·v = 0`. In the orthogonal view, its upper half is half an ellipse with
+  semi-major axis 1 and semi-minor axis `|n_z|`. In the conformal view, it is
+  a circular arc with centre `(n_x/n_z, n_y/n_z)` and radius `1/|n_z|`.
+  In either view, `n_z = 0` gives a diameter, and a vertical normal gives the
+  boundary circle. Two distinct, non-antipodal rim points define that boundary
+  line. Hollow markers show a line's antipodal rim ends when enabled.
+* **No parallels.** Any two distinct lines meet in exactly one elliptic point.
+  The *Meets* toggle marks intersections with `✕` and combines coincident
+  intersections. The *Meet* tool creates a derived point at an intersection
+  so other objects can use it.
+* **Pole.** A line's unit normal represents its pole, the point at distance
+  π/2 from every point of the line. The pole toggle shows it as a star in the
+  line's colour.
+* **Segment and midpoint.** The segment tool draws a shortest path between two
+  points. Their line also contains a second arc between them. Each arc has a
+  midpoint, and the two midpoints are π/2 apart. *Midpoint* chooses the midpoint
+  of the shortest arc and updates it when either endpoint moves. At distance
+  π/2, both arcs are equally short, so the choice can switch as an endpoint
+  moves. Deleting an endpoint also deletes the derived midpoint.
+* **Angle bisectors.** Two distinct lines with unit normals `m` and `n` have
+  two bisectors, with normals proportional to `m + n` and `m − n`. The
+  bisectors are perpendicular and pass through the original intersection.
+  *Bisect angle* creates both and updates them when their parent lines move.
+* **Duality.** The polar of a point `P` is the line of points at distance π/2
+  from `P`. Taking a pole and taking a polar undo each other. *Polar / Pole*
+  creates a polar from a point or a pole from a line. This correspondence
+  takes collinear points to concurrent lines.
+* **Perpendicular.** The perpendicular from `P` to a line `ℓ` joins `P` to
+  the pole of `ℓ`. It is unique unless `P` is the pole, in which case every
+  line through `P` is perpendicular to `ℓ`. The bold segment ends at the foot,
+  marked by a small square. For unit vectors `p` and `n`, its length is
+  `arcsin(|p·n|)`, or π/2 minus the distance to the pole. Perpendiculars can
+  be used as lines in further constructions.
+* **Angle marks.** Right-angle squares and triangle angle arcs are constructed
+  on the sphere and projected. Orthogonal projection distorts angles; the
+  conformal view preserves them. Marks near the rim are omitted when they
+  would cross the boundary.
+* **Distance.** For unit vectors `p` and `q`, `d = arccos(|p·q|)`, so distances
+  lie between 0 and π/2. A shortest segment that crosses the hemisphere's
+  equator appears as two pieces, joined at opposite points of the disk rim.
+* **Triangle.** The sides are shortest segments. For a nondegenerate triangle
+  that bounds a disk, the angles sum to more than π, and Girard's formula gives
+  `area = α + β + γ − π`. Small triangles approach Euclidean geometry.
+  Some triples of points have shortest sides that form a loop which does not
+  bound a disk. Away from the case of sides of length π/2, this happens when
+  `(a·b)(b·c)(c·a) < 0`: the lifted loop ends at `−a` instead of `a`. The program
+  reports that no disk is bounded and omits the area.
+* **Circle.** A circle contains the points at a fixed elliptic distance from
+  its centre. Select the centre and a point on the circle; moving either
+  updates it. On the sphere it is represented by antipodal plane sections.
+  Its visible pieces are ellipse arcs in the orthogonal view and circular
+  arcs in the conformal view, with degenerate cases possible. Its elliptic
+  centre generally differs from the centre of its projected curve. A circle
+  crossing the equator appears in two pieces joined at opposite rim points.
+  At radius π/2 it is exactly the polar line of its centre.
 
-Things worth trying: drag a triangle vertex to the rim and watch a side jump to
-the other side of the disk, and the area give up; turn on poles and see that a
-line's pole is where all its perpendiculars meet; drop the three altitudes of a
-triangle (perpendicular from each vertex to the opposite side) and use *Meet* to
-name the orthocentre — then drag a vertex and watch the three stay concurrent;
-circle a line's pole through any point of the line and watch the circle hug the
-line itself.
-
----
+For a triangle that bounds a disk, intersect two interior angle bisectors to
+construct the incentre, then drop a perpendicular to a side. A circle about the
+incentre through that foot is the incircle. The three altitudes meet at the
+orthocentre, which can be constructed with *Perpendicular* and *Meet*.
 
 ## 5. Project layout
 
 | path | contents |
 | --- | --- |
-| [main.py](main.py) | entry point: the window, or the command-line exports |
+| [main.py](main.py) | starts the window or exports from the command line |
 | [requirements.txt](requirements.txt) | the two packages the program needs |
 | [elliptic/geometry.py](elliptic/geometry.py) | the maths: lifting, lines, segments, circles, distance, duality, angles and area |
-| [elliptic/model.py](elliptic/model.py) | the construction: what is built on what, and how it comes apart again |
-| [elliptic/scene.py](elliptic/scene.py) | what to draw, in sphere coordinates — both panes consume it |
-| [elliptic/viewer.py](elliptic/viewer.py) | the tools: what a click does, toolkit-free |
-| [elliptic/ui/](elliptic/ui/) | the PySide6 window: the disk pane, the 3-D sphere pane, image rendering |
+| [elliptic/model.py](elliptic/model.py) | construction objects and their dependencies |
+| [elliptic/scene.py](elliptic/scene.py) | shared drawing data in sphere coordinates |
+| [elliptic/viewer.py](elliptic/viewer.py) | tool actions and interaction logic |
+| [elliptic/ui/](elliptic/ui/) | the PySide6 window, disk and 3D sphere panes, and image rendering |
 | [elliptic/sphere.py](elliptic/sphere.py) | shared sphere camera and visibility geometry |
 | [elliptic/gclc.py](elliptic/gclc.py) | the GCLC exporter |
 | [elliptic/tikz.py](elliptic/tikz.py) | the TikZ exporter for the disk |
-| [elliptic/tikz_sphere.py](elliptic/tikz_sphere.py) | the TikZ exporter for the 3-D sphere view |
-| [tests/](tests/) | `python -m tests` — checks over the maths, the model, the exports, the tools and the window |
-| [docs/](docs/) | the mathematics written out, as LaTeX source and the built PDF; `make -C docs` rebuilds it |
+| [elliptic/tikz_sphere.py](elliptic/tikz_sphere.py) | the TikZ exporter for the 3D sphere view |
+| [tests/](tests/) | checks for geometry, constructions, exports, tools and the window; run with `python -m tests` |
+| [docs/](docs/) | mathematical explanations and proofs in LaTeX and PDF; rebuild with `make -C docs` |
 
-Nothing in the construction stores a position or a normal: every object holds
-references to the objects it was built from and re-derives itself on demand.
-That is what makes dragging work, and it is why deleting something takes
-everything downstream of it with it.
+Derived objects keep references to the objects they depend on and recalculate
+when needed. Moving a point updates the construction; deleting an object also
+removes anything that depends on it.
